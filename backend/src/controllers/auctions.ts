@@ -569,7 +569,12 @@ export const publishAuction = async (req: Request, res: Response, next: NextFunc
             companyId: auction.companyId,
           },
         });
-        logger.info(`Generated secure vendor credentials for ${vendorEmail}. Temp Password: ${temporaryPassword}`);
+        logger.info(`Generated secure vendor credentials for ${vendorEmail}`);
+        if (process.env.NODE_ENV !== 'production') {
+          // SECURITY NOTE: Outputting plaintext credentials only during local development/evaluation setup.
+          // This will be replaced by a secure mail dispatch connector in production.
+          console.warn(`[LOCAL DEV ONLY] Temporary password for ${vendorEmail} is: ${temporaryPassword}`);
+        }
       }
 
       // Update participant record to show they are invited
@@ -705,7 +710,6 @@ export const cancelAuction = async (req: Request, res: Response, next: NextFunct
 };
 
 // 13. Submit Bid (Vendor / Surrogate)
-import crypto from 'crypto';
 import { Server } from 'socket.io';
 
 export const submitBid = async (req: Request, res: Response, next: NextFunction) => {
