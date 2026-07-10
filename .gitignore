@@ -1,0 +1,44 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+web_modules/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database files
+*.sqlite
+*.sqlite-journal
+*.db
+*.db-journal
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Agent files
+.system_generated/
+.tempmediaStorage/
+browser/
+*.png
+*.webp
+*.mp4
+walkthrough.md
+implementation_plan.md
+task.md

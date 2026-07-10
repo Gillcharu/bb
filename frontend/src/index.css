@@ -1,0 +1,258 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Inter:wght@100..900&family=Plus+Jakarta+Sans:wght@200..800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .font-display {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .font-body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .font-mono-numbers {
+    font-family: 'Geist Mono', SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 220 20% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+    --primary: 215 73% 16%;
+    --primary-foreground: 210 20% 98%;
+    --secondary: 210 20% 95%;
+    --secondary-foreground: 220 20% 10%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 20% 95%;
+    --accent-foreground: 220 20% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 214 32% 87%;
+    --input: 214 32% 87%;
+    --ring: 215 73% 16%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 6% 3%;
+    --foreground: 210 20% 98%;
+    --card: 240 6% 7%;
+    --card-foreground: 210 20% 98%;
+    --popover: 240 6% 7%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 240 6% 3%;
+    --secondary: 240 6% 12%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 240 6% 10%;
+    --muted-foreground: 215.4 16.3% 56.9%;
+    --accent: 240 5% 15%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 240 5% 15%;
+    --input: 240 5% 15%;
+    --ring: 210 20% 98%;
+  }
+}
+
+body {
+  @apply bg-background text-foreground font-sans antialiased;
+}
+
+/* Tabular figures for numerical layouts to avoid jitter */
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pulse animation for live indicators */
+@keyframes pulse-live {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.15);
+  }
+}
+
+.animate-pulse-live {
+  animation: pulse-live 2s infinite ease-in-out;
+}
+
+/* Dark theme slate-to-zinc overrides to ensure a unified layout */
+.dark .dark\:bg-slate-900,
+.dark .bg-slate-900 {
+  background-color: #0e0f11 !important;
+}
+
+.dark .dark\:bg-slate-950,
+.dark .bg-slate-950 {
+  background-color: #070708 !important;
+}
+
+.dark .dark\:border-slate-800,
+.dark .border-slate-800,
+.dark .dark\:border-slate-800\/80,
+.dark .border-slate-800\/80,
+.dark .dark\:border-slate-800\/60,
+.dark .border-slate-800\/60,
+.dark .border-slate-850,
+.dark .dark\:border-slate-850 {
+  border-color: #18181b !important; /* zinc-900 */
+}
+
+.dark .dark\:divide-slate-800,
+.dark .divide-slate-800,
+.dark .dark\:divide-slate-850,
+.dark .divide-slate-850 {
+  border-color: #18181b !important;
+}
+
+.dark .dark\:text-slate-300,
+.dark .text-slate-300 {
+  color: #d4d4d8 !important; /* zinc-300 */
+}
+
+.dark .dark\:text-slate-400,
+.dark .text-slate-400 {
+  color: #a1a1aa !important; /* zinc-400 */
+}
+
+.dark .dark\:hover\:bg-slate-800:hover,
+.dark .hover\:bg-slate-800:hover,
+.dark .dark\:hover\:bg-slate-800\/50:hover,
+.dark .hover\:bg-slate-800\/50:hover,
+.dark .dark\:hover\:bg-slate-850\/40:hover,
+.dark .hover\:bg-slate-850\/40:hover {
+  background-color: rgba(24, 24, 27, 0.4) !important;
+}
+
+/* B2B Design Language: Map brand accent indicators and button components to high-contrast slate black (light mode) and white (dark mode) */
+.bg-indigo-600,
+.bg-indigo-650,
+.bg-indigo-700,
+.bg-indigo-500,
+.bg-\[\#4F46E5\],
+.bg-\[\#1B5A9E\] {
+  background-color: #0F172A !important;
+  color: #ffffff !important;
+  border-color: #0F172A !important;
+}
+
+.text-indigo-600,
+.text-indigo-650,
+.text-indigo-655,
+.text-indigo-700,
+.text-indigo-500,
+.text-indigo-400,
+.text-indigo-200,
+.text-\[\#4F46E5\],
+.text-\[\#1B5A9E\] {
+  color: #0F172A !important;
+}
+
+.border-indigo-600,
+.border-indigo-650,
+.border-indigo-500,
+.border-indigo-200,
+.border-\[\#4F46E5\],
+.border-\[\#1B5A9E\],
+.border-indigo-100 {
+  border-color: #E4E7EC !important;
+}
+
+.hover\:bg-indigo-700:hover,
+.hover\:bg-indigo-600:hover,
+.hover\:bg-indigo-800:hover,
+.hover\:bg-\[\#4338CA\]:hover,
+.hover\:bg-\[\#14477E\]:hover {
+  background-color: #1e293b !important;
+  border-color: #1e293b !important;
+  color: #ffffff !important;
+}
+
+.focus\:ring-indigo-600:focus,
+.focus\:ring-indigo-650:focus,
+.focus\:ring-\[\#1B5A9E\]:focus,
+.focus\:ring-\[\#4F46E5\]:focus {
+  --tw-ring-color: #0F172A !important;
+  border-color: #0F172A !important;
+}
+
+/* Dark Mode equivalents: inverted high-contrast white active accents */
+.dark .bg-indigo-600,
+.dark .bg-indigo-650,
+.dark .bg-indigo-700,
+.dark .bg-indigo-500,
+.dark .dark\:bg-indigo-600,
+.dark .bg-\[\#4F46E5\],
+.dark .bg-\[\#1B5A9E\],
+.dark .dark\:bg-\[\#4F46E5\] {
+  background-color: #ffffff !important;
+  color: #0F172A !important;
+  border-color: #ffffff !important;
+}
+
+.dark .text-indigo-600,
+.dark .text-indigo-650,
+.dark .text-indigo-655,
+.dark .text-indigo-700,
+.dark .text-indigo-500,
+.dark .dark\:text-indigo-400,
+.dark .text-\[\#4F46E5\],
+.dark .text-\[\#818CF8\],
+.dark .dark\:text-\[\#818CF8\],
+.dark .text-\[\#1B5A9E\] {
+  color: #ffffff !important;
+}
+
+.dark .dark\:text-indigo-400,
+.dark .text-indigo-400,
+.dark .text-\[\#818CF8\],
+.dark .dark\:text-\[\#818CF8\] {
+  color: #ffffff !important;
+}
+
+.dark .border-indigo-600,
+.dark .border-indigo-650,
+.dark .border-indigo-500,
+.dark .border-indigo-200,
+.dark .border-\[\#4F46E5\],
+.dark .border-\[\#1B5A9E\],
+.dark .border-indigo-100 {
+  border-color: #18181b !important;
+}
+
+.dark .hover\:bg-indigo-700:hover,
+.dark .hover\:bg-indigo-600:hover,
+.dark .hover\:bg-indigo-800:hover,
+.dark .dark\:hover\:bg-indigo-700:hover,
+.dark .hover\:bg-\[\#4338CA\]:hover,
+.dark .hover\:bg-\[\#14477E\]:hover {
+  background-color: #f1f5f9 !important;
+  border-color: #f1f5f9 !important;
+  color: #0F172A !important;
+}
+
+.dark .focus\:ring-indigo-600:focus,
+.dark .focus\:ring-indigo-650:focus,
+.dark .focus\:ring-\[\#1B5A9E\]:focus,
+.dark .focus\:ring-\[\#4F46E5\]:focus {
+  --tw-ring-color: #ffffff !important;
+  border-color: #ffffff !important;
+}
+
+.shadow-indigo-600\/15,
+.shadow-indigo-650\/20 {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+}

@@ -1,0 +1,175 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SYSTEM_ADMIN
+  AUCTION_OWNER
+  APPROVER
+  OBSERVER
+  VENDOR
+}
+
+enum AuctionState {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  PUBLISH_VALIDATION
+  PUBLISHED
+  ENABLED
+  LIVE
+  OVERTIME
+  COMPLETED
+  REJECTED
+  CANCELLED
+  DISABLED
+}
+
+model Company {
+  id           String    @id @default(uuid())
+  name         String
+  logoUrl      String?
+  primaryColor String?
+  accentColor  String?
+  users        User[]
+  vendors      Vendor[]
+  auctions     Auction[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  password         String
+  role             Role
+  companyId        String
+  company          Company   @relation(fields: [companyId], references: [id])
+  ownedAuctions    Auction[] @relation("AuctionOwner")
+  approvedAuctions Auction[] @relation("AuctionApprover")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model Vendor {
+  id           String             @id @default(uuid())
+  name         String
+  email        String             @unique
+  companyId    String
+  company      Company            @relation(fields: [companyId], references: [id])
+  participants Participant[]
+  acceptances  VendorAcceptance[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+model Auction {
+  id              String            @id @default(uuid())
+  title           String
+  description     String?
+  state           AuctionState      @default(DRAFT)
+  startAt         DateTime?
+  endAt           DateTime?
+  enabled         Boolean           @default(false)
+  companyId       String
+  company         Company           @relation(fields: [companyId], references: [id])
+  ownerId         String
+  owner           User              @relation("AuctionOwner", fields: [ownerId], references: [id])
+  approverId      String?
+  approver        User?             @relation("AuctionApprover", fields: [approverId], references: [id])
+  bidRuleSnapshot BidRuleSnapshot?
+  participants    Participant[]
+  bids            Bid[]
+  acceptances     VendorAcceptance[]
+  baseCurrency    String            @default("INR")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+model Participant {
+  id            String    @id @default(uuid())
+  auctionId     String
+  auction       Auction   @relation(fields: [auctionId], references: [id])
+  vendorId      String
+  vendor        Vendor    @relation(fields: [vendorId], references: [id])
+  blocked       Boolean   @default(false)
+  invitedAt     DateTime?
+  acceptedTerms Boolean   @default(false)
+  bids          Bid[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Bid {
+  id                   String      @id @default(uuid())
+  amount               Decimal     @db.Decimal(12, 2)
+  conversionRate       Decimal     @db.Decimal(10, 4)
+  loadingPercent       Decimal     @db.Decimal(5, 2)
+  fixedLoading         Decimal     @db.Decimal(12, 2)
+  effectiveTotal       Decimal     @db.Decimal(12, 2)
+  timestamp            DateTime    @default(now())
+  auctionId            String
+  auction              Auction     @relation(fields: [auctionId], references: [id])
+  participantId        String
+  participant          Participant @relation(fields: [participantId], references: [id])
+  submittedAsSurrogate Boolean     @default(false)
+  hash                 String
+  previousHash         String?
+  createdAt            DateTime    @default(now())
+}
+
+model BidRuleSnapshot {
+  id                    String   @id @default(uuid())
+  auctionId             String   @unique
+  auction               Auction  @relation(fields: [auctionId], references: [id])
+  conversionRate        Decimal  @db.Decimal(10, 4)
+  loadingPercent        Decimal  @db.Decimal(5, 2)
+  fixedLoading          Decimal  @db.Decimal(12, 2)
+  minDecrement          Decimal  @db.Decimal(12, 2) @default(100.00)
+  auctionType           String   @default("REVERSE")
+  overtimeEnabled       Boolean  @default(true)
+  overtimeWindowMins    Int      @default(3)
+  overtimeExtensionMins Int      @default(5)
+  overtimeTriggerRank   String   @default("RANK_1")
+  maxExtensions         Int?
+  rankVisibility        String   @default("OWN_RANK_ONLY")
+  createdAt             DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  entity    String
+  entityId  String
+  action    String
+  actorId   String?
+  actorRole Role?
+  payload   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+}
+
+model DocumentTemplate {
+  id          String             @id @default(uuid())
+  type        String // e.g., TERMS, DISCLOSURE, RULES
+  version     Int
+  content     String
+  acceptances VendorAcceptance[]
+  createdAt   DateTime           @default(now())
+}
+
+model VendorAcceptance {
+  id         String           @id @default(uuid())
+  vendorId   String
+  vendor     Vendor           @relation(fields: [vendorId], references: [id])
+  auctionId  String
+  auction    Auction          @relation(fields: [auctionId], references: [id])
+  documentId String
+  document   DocumentTemplate @relation(fields: [documentId], references: [id])
+  acceptedAt DateTime         @default(now())
+  ipAddress  String?
+}
