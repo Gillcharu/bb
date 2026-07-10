@@ -1,28 +1,66 @@
 import { Server, Socket } from 'socket.io';
+import jwt from 'jsonwebtoken';
 import { prisma } from '../config/db';
 import { logger } from '../utils/logger';
 import { AuctionState } from '@prisma/client';
 
 export const setupSocketLiveEngine = (io: Server) => {
-  // Join room helper
-  io.on('connection', (socket: Socket) => {
-    logger.info(`Socket connected: ${socket.id}`);
+  // Enforce JWT token verification middleware for all Socket.IO connections
+  io.use((socket: Socket, next) => {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    if (!token || typeof token !== 'string') {
+      logger.warn(`Connection rejected: Unauthenticated socket handshake on ${socket.id}`);
+      return next(new Error('Authentication error: JWT token is required'));
+    }
 
-    socket.on('join', async (data: { auctionId: string; role: string; vendorId?: string }) => {
-      const { auctionId, role, vendorId } = data;
+    try {
+      const JWT_SECRET = process.env.JWT_SECRET;
+      if (!JWT_SECRET) {
+        return next(new Error('Server configuration error: JWT secret not defined'));
+      }
+
+      const decoded = jwt.verify(token, JWT_SECRET) as {
+        id: string;
+        email: string;
+        role: 'SYSTEM_ADMIN' | 'AUCTION_OWNER' | 'APPROVER' | 'OBSERVER' | 'VENDOR';
+        companyId: string;
+        auctionId?: string;
+      };
+
+      // Store verified token payload inside socket session state
+      socket.data.user = decoded;
+      return next();
+    } catch (err) {
+      logger.warn(`Connection rejected: Invalid or expired token socket handshake on ${socket.id}`);
+      return next(new Error('Authentication error: Invalid or expired token'));
+    }
+  });
+
+  io.on('connection', (socket: Socket) => {
+    const user = socket.data.user;
+    if (!user) {
+      socket.disconnect();
+      return;
+    }
+    logger.info(`Socket connected: ${socket.id} (User: ${user.email}, Role: ${user.role})`);
+
+    socket.on('join', async (data: { auctionId: string }) => {
+      const { auctionId } = data;
       if (!auctionId) return;
 
-      // Join base auction room for general broadcast
-      socket.join(`auction:${auctionId}`);
-      logger.info(`Socket ${socket.id} joined room: auction:${auctionId}`);
-
-      // Join role-specific controls
-      if (['SYSTEM_ADMIN', 'AUCTION_OWNER', 'APPROVER', 'OBSERVER'].includes(role)) {
+      // Enforce strict server-side authorization checks using verified token payload
+      if (user.role === 'VENDOR') {
+        if (user.auctionId !== auctionId) {
+          logger.warn(`Unauthorized join blocked: Vendor ${user.email} attempted to access auction ID: ${auctionId}`);
+          return;
+        }
+        socket.join(`auction:${auctionId}`);
+        socket.join(`auction:${auctionId}:vendor:${user.id}`);
+        logger.info(`Verified Vendor ${user.email} joined rooms for auction: ${auctionId}`);
+      } else if (['SYSTEM_ADMIN', 'AUCTION_OWNER', 'APPROVER', 'OBSERVER'].includes(user.role)) {
+        socket.join(`auction:${auctionId}`);
         socket.join(`auction:${auctionId}:admin`);
-        logger.info(`Socket ${socket.id} joined admin room: auction:${auctionId}:admin`);
-      } else if (role === 'VENDOR' && vendorId) {
-        socket.join(`auction:${auctionId}:vendor:${vendorId}`);
-        logger.info(`Socket ${socket.id} joined vendor room: auction:${auctionId}:vendor:${vendorId}`);
+        logger.info(`Verified Staff ${user.email} (${user.role}) joined rooms for auction: ${auctionId}`);
       }
     });
 
@@ -33,7 +71,7 @@ export const setupSocketLiveEngine = (io: Server) => {
     });
 
     socket.on('disconnect', () => {
-      logger.info(`Socket disconnected: ${socket.id}`);
+      logger.info(`Socket disconnected: ${socket.id} (${user.email})`);
     });
   });
 

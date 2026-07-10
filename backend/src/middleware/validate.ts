@@ -59,6 +59,7 @@ export const submitBidSchema = z.object({
 export const inviteUserSchema = z.object({
   body: z.object({
     email: z.string().email('Invalid email format').max(100),
+    password: z.string().min(6, 'Password must be at least 6 characters').max(50),
     role: z.enum(['SYSTEM_ADMIN', 'AUCTION_OWNER', 'APPROVER', 'OBSERVER', 'VENDOR']),
   }),
 });
