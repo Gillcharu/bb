@@ -325,7 +325,18 @@ const AuctionWizard: React.FC = () => {
 
           {currentStep === 2 && (
             <div className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500">Auction Type</label>
+                  <select
+                    value={formData.auctionType}
+                    onChange={(e) => updateField('auctionType', e.target.value)}
+                    className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-3 text-xs bg-white dark:bg-slate-950 focus:outline-none text-neutral-850 dark:text-neutral-200 cursor-pointer font-semibold"
+                  >
+                    <option value="REVERSE">REVERSE (Procurement)</option>
+                    <option value="FORWARD">FORWARD (Sales / Bidding)</option>
+                  </select>
+                </div>
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500">Conversion Rate</label>
                   <input
@@ -337,7 +348,9 @@ const AuctionWizard: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500">Min Decrement Value (INR)</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    {formData.auctionType === 'FORWARD' ? 'Min Increment Value (INR)' : 'Min Decrement Value (INR)'}
+                  </label>
                   <input
                     type="number"
                     value={formData.minDecrement}

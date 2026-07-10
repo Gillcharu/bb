@@ -1,6 +1,6 @@
 # Black Box Auction Hub
 
-Enterprise E-Auction Management System designed for Black Box Limited. This platform handles highly concurrent, secure, and real-time reverse bidding workflows for corporate procurement.
+Enterprise E-Auction Management System designed for Black Box Limited. This platform handles highly concurrent, secure, and real-time **Forward** and **Reverse** bidding workflows for corporate procurement and sales assets liquidation.
 
 ---
 
