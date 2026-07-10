@@ -23,7 +23,6 @@ Enterprise E-Auction Management System designed for Black Box Limited. This plat
 - **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Zustand, Recharts, Framer Motion
 - **Backend API**: Node.js, Express, TypeScript, Socket.IO
 - **Database Layer**: PostgreSQL managed by Prisma ORM
-- **Cache & Message Broker**: Redis (for horizontal socket scaling and fast lookups)
 - **Infrastructure**: Docker & Docker Compose
 
 ---
@@ -35,17 +34,15 @@ Enterprise E-Auction Management System designed for Black Box Limited. This plat
 - *OR* PostgreSQL v16 and Node.js v20 installed locally
 
 ### 2. Configure Environment Variables
-Copy and configure the environment variables in both the root and `backend/` directories:
-```env
-DATABASE_URL="postgresql://charugill@localhost:5432/postgres?schema=public"
-JWT_SECRET="supersecretjwtkeyforblackboxauctionhub2026!"
-JWT_REFRESH_SECRET="supersecretjwtrefreshkeyforblackboxauctionhub2026!"
-PORT=4000
-CORS_ORIGIN="http://localhost:3000"
+Copy the development environment variable template at the project root to create your `.env.dev` configuration:
+```bash
+cp .env.dev.example .env.dev
 ```
 
+*Note: For production deployments, make sure to generate and assign cryptographically secure secrets to `JWT_SECRET` and `JWT_REFRESH_SECRET` (e.g. using `openssl rand -hex 32` locally).*
+
 ### 3. Containerized Setup (Recommended)
-Build and run the entire application stack (API server, frontend static builder, database, and Redis cache) using Docker Compose:
+Build and run the entire application stack (API server, frontend development container, and PostgreSQL database) using Docker Compose:
 ```bash
 # Build and run containers
 docker compose up --build -d

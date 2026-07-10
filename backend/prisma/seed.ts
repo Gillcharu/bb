@@ -4,6 +4,9 @@ import bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: Database seeding is disabled in production to protect data integrity.');
+  }
   console.log('Clearing database...');
   await prisma.auditLog.deleteMany({});
   await prisma.bid.deleteMany({});
