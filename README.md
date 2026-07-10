@@ -6,12 +6,12 @@ Enterprise E-Auction Management System designed for Black Box Limited. This plat
 
 ## Technical Features
 
-### 🛡️ Enterprise-Grade Security & Audit
+###  Enterprise-Grade Security & Audit
 - **Cryptographic Bidding Ledger (Tamper-Evidence)**: Every bid submitted is cryptographically linked to the previous bid using SHA-256 chaining. Any manual database alteration invalidates the chain, making database tampering immediately visible.
 - **Granular RBAC**: Middleware authorization enforcing strict Role-Based Access Control (RBAC) across five organizational roles: `SYSTEM_ADMIN`, `AUCTION_OWNER`, `APPROVER`, `OBSERVER`, and `VENDOR`.
 - **System-wide Audit Logs**: Automatic transaction logging capturing actor metadata, operation payloads, timestamps, and request IP addresses.
 
-### ⚡ Real-Time Coordination & Scaling
+###  Real-Time Coordination & Scaling
 - **Websocket Broadcast Engine**: Instant bidirectional sync via Socket.IO, pushing bid lists, timer synchronizations, and ranking changes to connected clients in under 1 second.
 - **Anti-Sniping Overtime Rules**: Automated time extension triggers (e.g. extending by 5 minutes if a bid is placed in the final 3 minutes) preventing auction sniping tactics.
 - **Transactional Row Locking**: Prevents race conditions and duplicate ranking values when multiple bidders submit entries at the exact same millisecond.
