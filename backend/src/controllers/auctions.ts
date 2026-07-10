@@ -3,6 +3,8 @@ import { prisma } from '../config/db';
 import { AppError } from '../middleware/errorHandlers';
 import { AuctionState, Role } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
+import { logger } from '../utils/logger';
 
 // Helper to log system/user events to AuditLog
 const logAuditEvent = async (
@@ -550,15 +552,15 @@ export const publishAuction = async (req: Request, res: Response, next: NextFunc
     }
 
     // Automatically create VENDOR user login credentials if they don't exist
-    const defaultPassword = 'Password123!';
-    const passwordHash = await bcrypt.hash(defaultPassword, 10);
-
     for (const participant of auction.participants) {
       const vendorEmail = participant.vendor.email;
       
       // Upsert a VENDOR role user matching this vendor email
       let user = await prisma.user.findUnique({ where: { email: vendorEmail } });
       if (!user) {
+        // Generate a cryptographically secure random temporary password
+        const temporaryPassword = crypto.randomBytes(12).toString('hex');
+        const passwordHash = await bcrypt.hash(temporaryPassword, 10);
         user = await prisma.user.create({
           data: {
             email: vendorEmail,
@@ -567,6 +569,7 @@ export const publishAuction = async (req: Request, res: Response, next: NextFunc
             companyId: auction.companyId,
           },
         });
+        logger.info(`Generated secure vendor credentials for ${vendorEmail}. Temp Password: ${temporaryPassword}`);
       }
 
       // Update participant record to show they are invited

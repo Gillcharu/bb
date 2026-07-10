@@ -509,7 +509,7 @@ const AuctionWizard: React.FC = () => {
               {user && user.role === 'SYSTEM_ADMIN' && (
                 <div className="border border-indigo-150 dark:border-indigo-950 bg-indigo-50/10 p-4 rounded-2xl space-y-2 mt-4">
                   <label className="block text-[10px] font-bold text-indigo-650 dark:text-indigo-400 uppercase tracking-wider">Administrative State Override</label>
-                  <p className="text-[10px] text-neutral-500 mb-1">Force this auction into a specific phase for demonstration testing.</p>
+                  <p className="text-[10px] text-neutral-500 mb-1">Force this auction into a specific phase for manual administrative intervention.</p>
                   <select
                     value={formData.state}
                     onChange={(e) => updateField('state', e.target.value)}
