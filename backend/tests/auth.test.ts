@@ -1,5 +1,5 @@
-process.env.JWT_SECRET = 'supersecretjwtkeyforblackboxauctionhub2026!';
-process.env.JWT_REFRESH_SECRET = 'supersecretjwtrefreshkeyforblackboxauctionhub2026!';
+process.env.JWT_SECRET = 'test-jwt-secret-do-not-use-in-prod';
+process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-do-not-use-in-prod';
 
 import request from 'supertest';
 import express, { json } from 'express';
@@ -34,7 +34,7 @@ app.get('/api/test-admin', authenticateJWT, requireRoles(['SYSTEM_ADMIN']), (req
 
 app.use(errorHandler);
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtkeyforblackboxauctionhub2026!';
+const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-do-not-use-in-prod';
 
 describe('Auth Integration Tests', () => {
   beforeEach(() => {
