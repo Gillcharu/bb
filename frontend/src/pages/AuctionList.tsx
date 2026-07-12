@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../providers/AuthProvider';
-import { 
+import {
   Plus, Search, Trash2, Copy, Eye,
   Play, ShieldAlert, AlertTriangle, CheckCircle2, X, Clock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { getAuctionDisplayId } from '../utils/auctionHelper';
+import { formatDateTime } from '../utils/format';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -30,10 +31,18 @@ const getRelativeTimeString = (dateInput: string | Date): string => {
 const AuctionList: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [auctions, setAuctions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>(searchParams.get('search') || '');
+
+  // Keep the global header quick-search in sync with this page.
+  useEffect(() => {
+    const fromUrl = searchParams.get('search') || '';
+    setSearchQuery(prev => (prev === fromUrl ? prev : fromUrl));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -86,9 +95,8 @@ const AuctionList: React.FC = () => {
       const res = await axios.get(url, { params });
       setAuctions(res.data.data);
       setCurrentPage(1); // Reset to page 1 on filter
-    } catch (err) {
-      console.error('Error fetching auctions list:', err);
-      showToast('Failed to load auctions', 'error');
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || 'Failed to load auctions', 'error');
     } finally {
       setLoading(false);
     }
@@ -103,9 +111,8 @@ const AuctionList: React.FC = () => {
       await axios.post(`${API_URL}/auctions/${id}/duplicate`);
       showToast('Auction duplicated successfully!');
       fetchAuctions();
-    } catch (err) {
-      console.error('Failed to duplicate:', err);
-      showToast('Failed to duplicate auction', 'error');
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || 'Failed to duplicate auction', 'error');
     }
   };
 
@@ -118,9 +125,8 @@ const AuctionList: React.FC = () => {
       await axios.post(`${API_URL}/auctions/${id}/cancel`, { comment: reason });
       showToast('Auction cancelled successfully!');
       fetchAuctions();
-    } catch (err) {
-      console.error('Failed to cancel:', err);
-      showToast('Failed to cancel auction', 'error');
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || 'Failed to cancel auction', 'error');
     }
   };
 
@@ -177,7 +183,7 @@ const AuctionList: React.FC = () => {
             placeholder="Search by title..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-1.5 border border-neutral-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-650 text-neutral-800 dark:text-neutral-250"
+            className="w-full pl-9 pr-4 py-1.5 border border-neutral-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600 text-neutral-800 dark:text-neutral-200"
           />
         </div>
       </div>
@@ -200,7 +206,7 @@ const AuctionList: React.FC = () => {
                 <div className="h-3.5 w-full bg-neutral-200 dark:bg-slate-800 rounded"></div>
                 <div className="h-3.5 w-1/2 bg-neutral-200 dark:bg-slate-800 rounded"></div>
               </div>
-              <div className="border-t border-neutral-100 dark:border-slate-850 pt-3 flex justify-between items-center">
+              <div className="border-t border-neutral-100 dark:border-slate-800 pt-3 flex justify-between items-center">
                 <div className="space-y-1">
                   <div className="h-2 w-10 bg-neutral-200 dark:bg-slate-800 rounded"></div>
                   <div className="h-3 w-20 bg-neutral-200 dark:bg-slate-800 rounded"></div>
@@ -244,7 +250,7 @@ const AuctionList: React.FC = () => {
                     {auc.state}
                   </span>
                   <div className="flex flex-col items-end gap-1">
-                    <span className="text-[10px] font-mono text-neutral-400">#{getAuctionDisplayId(auc.id, auc.title).id}</span>
+                    <span className="text-[10px] font-mono text-neutral-400">#{getAuctionDisplayId(auc.id).id}</span>
                     <span className="text-[9px] text-zinc-400 flex items-center gap-1">
                       <Clock size={10} />
                       {getRelativeTimeString(auc.updatedAt)}
@@ -263,14 +269,14 @@ const AuctionList: React.FC = () => {
 
                 <div className="border-t border-neutral-100 dark:border-slate-800/60 pt-3 flex justify-between items-center">
                   <div className="space-y-0.5">
-                    <p className="text-[10px] text-neutral-400">Start Time</p>
+                    <p className="text-[10px] text-neutral-400">Start Time (local)</p>
                     <p className="text-[11px] font-medium text-neutral-800 dark:text-neutral-300">
-                      {auc.startAt ? new Date(auc.startAt).toLocaleString() : 'Not scheduled'}
+                      {auc.startAt ? formatDateTime(auc.startAt) : 'Not scheduled'}
                     </p>
                   </div>
                   <div className="text-right space-y-0.5">
                     <p className="text-[10px] text-neutral-400">Participants</p>
-                    <p className="text-[11px] font-bold text-neutral-850 dark:text-neutral-250">{auc.participants?.length || 0} Vendors</p>
+                    <p className="text-[11px] font-bold text-neutral-800 dark:text-neutral-200">{auc.participants?.length || 0} Vendors</p>
                   </div>
                 </div>
 
@@ -281,7 +287,7 @@ const AuctionList: React.FC = () => {
                         ? `/auctions/${auc.id}/live`
                         : `/auctions/${auc.id}`
                     )}
-                    className="flex-1 flex justify-center items-center gap-1.5 bg-neutral-105 hover:bg-neutral-200 dark:bg-slate-850 dark:hover:bg-slate-850/80 text-neutral-800 dark:text-slate-200 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
+                    className="flex-1 flex justify-center items-center gap-1.5 bg-neutral-100 hover:bg-neutral-200 dark:bg-slate-800 dark:hover:bg-slate-800/80 text-neutral-800 dark:text-slate-200 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
                   >
                     {['LIVE', 'OVERTIME'].includes(auc.state) ? (
                       <>
@@ -340,7 +346,7 @@ const AuctionList: React.FC = () => {
               <button
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(prev => prev - 1)}
-                className="px-3.5 py-1.5 text-xs font-semibold rounded-lg border border-neutral-250 dark:border-slate-800 disabled:opacity-40 hover:bg-neutral-100 dark:hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed text-neutral-750 dark:text-neutral-300"
+                className="px-3.5 py-1.5 text-xs font-semibold rounded-lg border border-neutral-200 dark:border-slate-800 disabled:opacity-40 hover:bg-neutral-100 dark:hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed text-neutral-700 dark:text-neutral-300"
               >
                 <ChevronLeft size={14} />
                 Previous
@@ -349,7 +355,7 @@ const AuctionList: React.FC = () => {
               <button
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(prev => prev + 1)}
-                className="px-3.5 py-1.5 text-xs font-semibold rounded-lg border border-neutral-250 dark:border-slate-800 disabled:opacity-40 hover:bg-neutral-100 dark:hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed text-neutral-750 dark:text-neutral-300"
+                className="px-3.5 py-1.5 text-xs font-semibold rounded-lg border border-neutral-200 dark:border-slate-800 disabled:opacity-40 hover:bg-neutral-100 dark:hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed text-neutral-700 dark:text-neutral-300"
               >
                 Next
                 <ChevronRight size={14} />
@@ -362,7 +368,7 @@ const AuctionList: React.FC = () => {
       {/* Custom Confirmation Modal Dialog */}
       {confirmDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 transform scale-100 transition-all duration-350">
+          <div className="bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 transform scale-100 transition-all duration-300">
             <div className="flex items-start gap-3">
               <div className="p-2.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
                 <AlertTriangle size={20} />
@@ -378,14 +384,14 @@ const AuctionList: React.FC = () => {
                 placeholder="Enter cancellation reason (min 5 characters)..."
                 value={confirmDialog.inputValue || ''}
                 onChange={(e) => setConfirmDialog(prev => prev ? { ...prev, inputValue: e.target.value } : null)}
-                className="w-full p-3 text-xs border border-neutral-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-950 focus:outline-none focus:ring-1 focus:ring-indigo-650 min-h-[70px] text-neutral-800 dark:text-neutral-250"
+                className="w-full p-3 text-xs border border-neutral-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-950 focus:outline-none focus:ring-1 focus:ring-indigo-600 min-h-[70px] text-neutral-800 dark:text-neutral-200"
               />
             )}
 
             <div className="flex gap-2.5 justify-end pt-2">
               <button
                 onClick={() => setConfirmDialog(null)}
-                className="px-4 py-2 border border-neutral-250 dark:border-slate-800 rounded-xl text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-slate-800 text-neutral-600 dark:text-slate-350 cursor-pointer"
+                className="px-4 py-2 border border-neutral-200 dark:border-slate-800 rounded-xl text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-slate-800 text-neutral-600 dark:text-slate-300 cursor-pointer"
               >
                 Cancel
               </button>

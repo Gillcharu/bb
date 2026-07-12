@@ -81,7 +81,7 @@ const AdminLogin: React.FC = () => {
       <header className="w-full max-w-7xl mx-auto px-6 lg:px-16 h-20 flex items-center justify-between relative z-10">
         <div className="flex items-center gap-3">
           <span className={`text-xl font-bold tracking-tight font-sans bg-clip-text text-transparent bg-gradient-to-r transition-all duration-500 ${
-            isLightTheme ? 'from-zinc-900 via-zinc-800 to-zinc-650' : 'from-white via-zinc-100 to-zinc-400'
+            isLightTheme ? 'from-zinc-900 via-zinc-800 to-zinc-600' : 'from-white via-zinc-100 to-zinc-400'
           }`}>
             Black Box<span className="text-primary-600">.</span>
           </span>
@@ -259,7 +259,7 @@ const AdminLogin: React.FC = () => {
               <div className="relative group">
                 <div className={`flex items-center gap-4 border-b py-2.5 transition-colors duration-300 ${
                   isLightTheme 
-                    ? 'border-zinc-200 group-focus-within:border-indigo-650' 
+                    ? 'border-zinc-200 group-focus-within:border-indigo-600' 
                     : 'border-zinc-700 group-focus-within:border-indigo-500'
                 }`}>
                   <UserIcon size={18} className={`transition-colors duration-300 ${
@@ -272,6 +272,8 @@ const AdminLogin: React.FC = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="Login ID"
+                    aria-label="Email address"
+                    autoComplete="email"
                     required
                     className={`w-full bg-transparent text-sm focus:outline-none py-0.5 transition-colors duration-500 ${
                       isLightTheme ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-white placeholder:text-zinc-500'
@@ -284,7 +286,7 @@ const AdminLogin: React.FC = () => {
               <div className="relative group">
                 <div className={`flex items-center gap-4 border-b py-2.5 transition-colors duration-300 ${
                   isLightTheme 
-                    ? 'border-zinc-200 group-focus-within:border-indigo-650' 
+                    ? 'border-zinc-200 group-focus-within:border-indigo-600' 
                     : 'border-zinc-700 group-focus-within:border-indigo-500'
                 }`}>
                   <LockIcon size={18} className={`transition-colors duration-300 ${
@@ -297,6 +299,8 @@ const AdminLogin: React.FC = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Password"
+                    aria-label="Password"
+                    autoComplete="current-password"
                     required
                     className={`w-full bg-transparent text-sm focus:outline-none py-0.5 pr-10 transition-colors duration-500 ${
                       isLightTheme ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-white placeholder:text-zinc-500'
@@ -305,6 +309,7 @@ const AdminLogin: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                     className={`absolute right-1 transition-colors duration-200 ${
                       isLightTheme ? 'text-zinc-400 hover:text-zinc-950' : 'text-zinc-500 hover:text-white'
                     }`}
@@ -312,21 +317,6 @@ const AdminLogin: React.FC = () => {
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-              </div>
-
-              {/* Persist session checkbox */}
-              <div className={`flex justify-between items-center text-xs font-medium tracking-wide transition-colors duration-500 ${
-                isLightTheme ? 'text-zinc-500 hover:text-zinc-800' : 'text-zinc-400 hover:text-zinc-200'
-              }`}>
-                <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    className={`h-4 w-4 rounded text-indigo-600 focus:ring-0 focus:ring-offset-0 focus:outline-none transition-colors duration-500 ${
-                      isLightTheme ? 'bg-zinc-100 border-zinc-300' : 'bg-[#18181b] border-zinc-700'
-                    }`}
-                  />
-                  <span className="italic">Keep me logged in</span>
-                </label>
               </div>
 
               <button
@@ -348,9 +338,9 @@ const AdminLogin: React.FC = () => {
 
       {/* Footer */}
       <footer className={`w-full text-center py-6 text-[10px] uppercase tracking-[0.25em] relative z-10 border-t transition-all duration-500 ${
-        isLightTheme ? 'border-zinc-200/50 bg-zinc-50/50 text-zinc-500' : 'border-zinc-900/50 bg-black/10 text-zinc-650'
+        isLightTheme ? 'border-zinc-200/50 bg-zinc-50/50 text-zinc-500' : 'border-zinc-900/50 bg-black/10 text-zinc-600'
       }`}>
-        © 2026 Vendor Auction Hub | Secure Enterprise Procurement Platform
+        © 2026 Black Box Auction Hub | Secure Enterprise Procurement Platform
       </footer>
 
       {/* Internal Portal Help Modal */}
@@ -363,7 +353,7 @@ const AdminLogin: React.FC = () => {
               type="button"
               onClick={() => setShowHelpModal(false)}
               className={`absolute top-4 right-4 transition-colors ${
-                isLightTheme ? 'text-zinc-400 hover:text-zinc-850' : 'text-zinc-500 hover:text-white'
+                isLightTheme ? 'text-zinc-400 hover:text-zinc-800' : 'text-zinc-500 hover:text-white'
               }`}
             >
               <X size={18} />
@@ -396,8 +386,8 @@ const AdminLogin: React.FC = () => {
               onClick={() => setShowHelpModal(false)}
               className={`mt-6 w-full rounded-xl font-semibold py-2.5 text-xs transition border ${
                 isLightTheme 
-                  ? 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-850' 
-                  : 'bg-zinc-850 hover:bg-zinc-800 border-zinc-700/60 text-white'
+                  ? 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-800' 
+                  : 'bg-zinc-800 hover:bg-zinc-800 border-zinc-700/60 text-white'
               }`}
             >
               Close Help
@@ -416,7 +406,7 @@ const AdminLogin: React.FC = () => {
               type="button"
               onClick={() => setShowContactModal(false)}
               className={`absolute top-4 right-4 transition-colors ${
-                isLightTheme ? 'text-zinc-400 hover:text-zinc-850' : 'text-zinc-500 hover:text-white'
+                isLightTheme ? 'text-zinc-400 hover:text-zinc-800' : 'text-zinc-500 hover:text-white'
               }`}
             >
               <X size={18} />
@@ -433,7 +423,7 @@ const AdminLogin: React.FC = () => {
               }`}>
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-500">Support Email</span>
-                  <a href="mailto:support@blackbox.com" className="text-indigo-650 hover:underline">support@blackbox.com</a>
+                  <a href="mailto:support@blackbox.com" className="text-indigo-600 hover:underline">support@blackbox.com</a>
                 </div>
 
                 <div className="flex justify-between items-center">
@@ -447,8 +437,8 @@ const AdminLogin: React.FC = () => {
               onClick={() => setShowContactModal(false)}
               className={`mt-6 w-full rounded-xl font-semibold py-2.5 text-xs transition border ${
                 isLightTheme 
-                  ? 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-850' 
-                  : 'bg-zinc-850 hover:bg-zinc-800 border-zinc-700/60 text-white'
+                  ? 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-800' 
+                  : 'bg-zinc-800 hover:bg-zinc-800 border-zinc-700/60 text-white'
               }`}
             >
               Close

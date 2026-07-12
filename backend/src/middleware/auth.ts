@@ -18,11 +18,9 @@ declare global {
 }
 
 import { prisma } from '../config/db';
+import { env } from '../config/env';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is not defined.');
-}
+const JWT_SECRET = env.jwtSecret;
 
 export const authenticateJWT = async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;

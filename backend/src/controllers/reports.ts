@@ -13,7 +13,7 @@ export const getAuctionReport = async (req: Request, res: Response, next: NextFu
         participants: {
           include: {
             vendor: true,
-            bids: true,
+            bids: { orderBy: { timestamp: 'asc' } },
           },
         },
         bids: {
@@ -28,7 +28,12 @@ export const getAuctionReport = async (req: Request, res: Response, next: NextFu
     });
 
     if (!auction) {
-      return next(new AppError('Auction not found', 404));
+      return next(new AppError('Auction not found', 404, 'NOT_FOUND'));
+    }
+
+    // Company scoping: staff can only read reports for their own company's auctions.
+    if (req.user!.role !== 'SYSTEM_ADMIN' && auction.companyId !== req.user!.companyId) {
+      return next(new AppError('Auction not found', 404, 'NOT_FOUND'));
     }
 
     // 1. Compile participation funnel stats
@@ -36,8 +41,16 @@ export const getAuctionReport = async (req: Request, res: Response, next: NextFu
     const termsAcceptedCount = auction.participants.filter(p => p.acceptedTerms).length;
     const bidsPlacedCount = auction.participants.filter(p => p.bids.length > 0).length;
 
-    // We can mock loggedIn count as acceptedTerms count + some factor for simplicity
-    const loggedInCount = Math.min(totalInvited, termsAcceptedCount + (totalInvited > termsAcceptedCount ? 1 : 0));
+    // Real logged-in count: distinct vendor accounts that recorded a login
+    // audit event scoped to this auction.
+    const loginLogs = await prisma.auditLog.findMany({
+      where: {
+        action: 'VENDOR_LOGIN',
+        payload: { path: ['auctionId'], equals: id },
+      },
+      select: { actorId: true },
+    });
+    const loggedInCount = new Set(loginLogs.map(l => l.actorId).filter(Boolean)).size;
 
     const participationFunnel = {
       invited: totalInvited,
@@ -60,8 +73,9 @@ export const getAuctionReport = async (req: Request, res: Response, next: NextFu
         ? (isReverse ? Math.min(...personalEffs) : Math.max(...personalEffs))
         : null;
 
-      const initialBid = p.bids.length > 0 ? Number(p.bids[p.bids.length - 1].amount) : null;
-      const initialEffective = p.bids.length > 0 ? Number(p.bids[p.bids.length - 1].effectiveTotal) : null;
+      // Bids are ordered oldest-first, so the initial bid is the first entry.
+      const initialBid = p.bids.length > 0 ? Number(p.bids[0].amount) : null;
+      const initialEffective = p.bids.length > 0 ? Number(p.bids[0].effectiveTotal) : null;
 
       // Improvement percentage: difference from initial to final
       let improvementPercent = 0;
@@ -124,6 +138,7 @@ export const getAuctionReport = async (req: Request, res: Response, next: NextFu
           startAt: auction.startAt,
           endAt: auction.endAt,
           createdAt: auction.createdAt,
+          baseCurrency: auction.baseCurrency,
           rules: auction.bidRuleSnapshot,
         },
         participationFunnel,

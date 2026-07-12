@@ -1,8 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
+import net from 'net';
 import { prisma } from '../config/db';
 import { AppError } from '../middleware/errorHandlers';
 import { Role } from '@prisma/client';
 import bcrypt from 'bcrypt';
+
+const BCRYPT_COST = 12;
 
 // 1. Users CRUD
 export const listUsers = async (req: Request, res: Response, next: NextFunction) => {
@@ -27,8 +30,10 @@ export const inviteUser = async (req: Request, res: Response, next: NextFunction
   try {
     const { email, password, role } = req.body;
 
-    if (!email || !password || !role) {
-      return next(new AppError('Email, password, and role are required', 400));
+    // Privilege escalation guard: only a SYSTEM_ADMIN may create another
+    // SYSTEM_ADMIN account.
+    if (role === 'SYSTEM_ADMIN' && req.user!.role !== 'SYSTEM_ADMIN') {
+      return next(new AppError('Only a System Administrator can create administrator accounts', 403, 'FORBIDDEN'));
     }
 
     const exists = await prisma.user.findUnique({ where: { email } });
@@ -36,7 +41,7 @@ export const inviteUser = async (req: Request, res: Response, next: NextFunction
       return next(new AppError('User email already exists', 400));
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
     const user = await prisma.user.create({
       data: {
         email,
@@ -137,23 +142,22 @@ export const createTemplate = async (req: Request, res: Response, next: NextFunc
   try {
     const { type, content } = req.body;
 
-    if (!type || !content) {
-      return next(new AppError('Template type and content are required', 400));
-    }
+    // Version increment inside a transaction; the (type, version) unique
+    // constraint guarantees no duplicate versions under concurrent writes.
+    const template = await prisma.$transaction(async tx => {
+      const latest = await tx.documentTemplate.findFirst({
+        where: { type },
+        orderBy: { version: 'desc' },
+      });
+      const nextVersion = latest ? latest.version + 1 : 1;
 
-    // Resolve current version count to increment
-    const latest = await prisma.documentTemplate.findFirst({
-      where: { type },
-      orderBy: { version: 'desc' },
-    });
-    const nextVersion = latest ? latest.version + 1 : 1;
-
-    const template = await prisma.documentTemplate.create({
-      data: {
-        type,
-        content,
-        version: nextVersion,
-      },
+      return tx.documentTemplate.create({
+        data: {
+          type,
+          content,
+          version: nextVersion,
+        },
+      });
     });
 
     return res.status(201).json({ success: true, data: template });
@@ -162,14 +166,35 @@ export const createTemplate = async (req: Request, res: Response, next: NextFunc
   }
 };
 
-// 5. Test SMTP Settings Diagnostics
+// 5. Test SMTP Settings Diagnostics — performs a real TCP reachability check
+// against the configured host/port. Credentials are never stored or logged.
 export const testSMTPConfig = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { host, port, username, password } = req.body;
-    // Mock successful connection diagnostics
+    const { host, port } = req.body;
+
+    const reachable = await new Promise<boolean>(resolve => {
+      const socket = net.createConnection({ host, port: Number(port), timeout: 5000 });
+      socket.once('connect', () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once('timeout', () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.once('error', () => {
+        socket.destroy();
+        resolve(false);
+      });
+    });
+
+    if (!reachable) {
+      return next(new AppError(`Could not reach SMTP server at ${host}:${port}. Check the host, port and firewall rules.`, 400, 'SMTP_UNREACHABLE'));
+    }
+
     return res.status(200).json({
       success: true,
-      message: `SMTP mock connection to ${host || 'localhost'}:${port || 587} succeeded. Connection verified.`,
+      message: `SMTP server at ${host}:${port} is reachable. Full delivery verification requires the mail dispatch connector.`,
     });
   } catch (error) {
     next(error);

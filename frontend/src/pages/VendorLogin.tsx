@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../providers/AuthProvider';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, User as UserIcon, Lock as LockIcon, HelpCircle, ShieldCheck, ShieldAlert, Clock, X, Mail, Sun, Moon } from 'lucide-react';
+import { Eye, EyeOff, Lock as LockIcon, HelpCircle, ShieldCheck, ShieldAlert, Clock, X, Mail, Sun, Moon } from 'lucide-react';
 import axios from 'axios';
 import BlackBoxLogo from '../components/BlackBoxLogo';
 import { getAuctionDisplayId } from '../utils/auctionHelper';
 import { getActiveToken } from '../utils/tokenHelper';
+import { formatDateTime } from '../utils/format';
 
 interface AuctionContext {
   id: string;
@@ -39,8 +40,8 @@ const VendorLogin: React.FC = () => {
             } else {
               navigate(`/vendor/auctions/${activeAuctionId}/terms`);
             }
-          } catch (e) {
-            console.error(e);
+          } catch {
+            // Malformed token: stay on the login screen.
           }
         }
       }
@@ -87,8 +88,8 @@ const VendorLogin: React.FC = () => {
       } else if (extractedId.includes('/vendor/login/')) {
         extractedId = extractedId.split('/vendor/login/')[1].split('?')[0];
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
+      // Fall through with the raw input; the lookup below reports invalid links.
     }
     
     setActiveAuctionId(extractedId);
@@ -108,7 +109,7 @@ const VendorLogin: React.FC = () => {
         const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
         const res = await axios.get(`${API_URL}/auctions/public/${activeAuctionId}`);
         setContext(res.data.data);
-      } catch (err: any) {
+      } catch {
         setLookupError('This invitation link is invalid or has expired. Contact your auction administrator.');
         setContext(null);
       } finally {
@@ -174,7 +175,7 @@ const VendorLogin: React.FC = () => {
       <header className="w-full max-w-7xl mx-auto px-6 lg:px-16 h-20 flex items-center justify-between relative z-10">
         <div className="flex items-center gap-3">
           <span className={`text-xl font-bold tracking-tight font-sans bg-clip-text text-transparent bg-gradient-to-r transition-all duration-500 ${
-            isLightTheme ? 'from-zinc-900 via-zinc-800 to-zinc-650' : 'from-white via-zinc-100 to-zinc-400'
+            isLightTheme ? 'from-zinc-900 via-zinc-800 to-zinc-600' : 'from-white via-zinc-100 to-zinc-400'
           }`}>
             Black Box<span className="text-primary-600">.</span>
           </span>
@@ -340,7 +341,7 @@ const VendorLogin: React.FC = () => {
             {/* 4 Secure Status Indicator Banners (No information leak) */}
             {loadingContext && (
               <div className={`border rounded-xl p-3.5 mb-6 text-xs flex items-center gap-2.5 animate-pulse transition-all duration-500 ${
-                isLightTheme ? 'bg-zinc-100/50 border-zinc-200/80 text-zinc-650' : 'bg-zinc-800/10 border-zinc-800/40 text-zinc-400'
+                isLightTheme ? 'bg-zinc-100/50 border-zinc-200/80 text-zinc-600' : 'bg-zinc-800/10 border-zinc-800/40 text-zinc-400'
               }`}>
                 <Clock size={16} className="text-zinc-500 shrink-0 animate-spin" />
                 <span>Verifying secure bidding session context...</span>
@@ -356,7 +357,7 @@ const VendorLogin: React.FC = () => {
                   }`}>
                     <ShieldAlert size={16} className={`${isLightTheme ? 'text-red-600' : 'text-danger'} shrink-0 mt-0.5`} />
                     <div>
-                      <span className={`${isLightTheme ? 'text-red-700' : 'text-red-650'} font-bold block mb-0.5 text-[10px] uppercase tracking-wider`}>Bidding Session Closed</span>
+                      <span className={`${isLightTheme ? 'text-red-700' : 'text-red-600'} font-bold block mb-0.5 text-[10px] uppercase tracking-wider`}>Bidding Session Closed</span>
                       This bidding session has completed. Credentials are no longer valid.
                     </div>
                   </div>
@@ -399,7 +400,7 @@ const VendorLogin: React.FC = () => {
                 <div className={`border rounded-xl p-4 mb-6 text-xs transition-all duration-500 space-y-3 ${
                   isLightTheme 
                     ? 'bg-white border-zinc-200 text-zinc-800' 
-                    : 'bg-[#121215] border-zinc-800 text-zinc-350'
+                    : 'bg-[#121215] border-zinc-800 text-zinc-300'
                 }`}>
                   <h4 className="font-bold text-[10px] uppercase tracking-wider text-indigo-500 border-b pb-1.5 border-dashed border-zinc-800/40">
                     Auction Session Details
@@ -411,15 +412,15 @@ const VendorLogin: React.FC = () => {
                     </div>
                     <div>
                       <span className="text-zinc-500 block text-[9px] uppercase font-bold">Auction ID</span>
-                      <span className={`font-mono font-semibold ${isLightTheme ? 'text-zinc-900' : 'text-neutral-100'}`}>{getAuctionDisplayId(context.id, context.title).id}</span>
+                      <span className={`font-mono font-semibold ${isLightTheme ? 'text-zinc-900' : 'text-neutral-100'}`}>{getAuctionDisplayId(context.id).id}</span>
                     </div>
                     <div>
-                      <span className="text-zinc-500 block text-[9px] uppercase font-bold">Start Time</span>
-                      <span className={isLightTheme ? 'text-zinc-700' : 'text-zinc-300'}>{context.startAt ? new Date(context.startAt).toLocaleString() : 'Immediate'}</span>
+                      <span className="text-zinc-500 block text-[9px] uppercase font-bold">Start Time (local)</span>
+                      <span className={isLightTheme ? 'text-zinc-700' : 'text-zinc-300'}>{context.startAt ? formatDateTime(context.startAt) : 'Immediate'}</span>
                     </div>
                     <div>
-                      <span className="text-zinc-500 block text-[9px] uppercase font-bold">Scheduled Expiry</span>
-                      <span className={isLightTheme ? 'text-zinc-700' : 'text-zinc-300'}>{context.endAt ? new Date(context.endAt).toLocaleString() : 'On Close'}</span>
+                      <span className="text-zinc-500 block text-[9px] uppercase font-bold">Scheduled Expiry (local)</span>
+                      <span className={isLightTheme ? 'text-zinc-700' : 'text-zinc-300'}>{context.endAt ? formatDateTime(context.endAt) : 'On Close'}</span>
                     </div>
                   </div>
                 </div>
@@ -438,7 +439,7 @@ const VendorLogin: React.FC = () => {
                 <div className="relative group">
                   <div className={`flex items-center gap-4 border-b py-2.5 transition-colors duration-300 ${
                     isLightTheme 
-                      ? 'border-zinc-200 group-focus-within:border-indigo-650' 
+                      ? 'border-zinc-200 group-focus-within:border-indigo-600' 
                       : 'border-zinc-700 group-focus-within:border-indigo-500'
                   }`}>
                     <Mail size={18} className="text-zinc-500" />
@@ -474,13 +475,24 @@ const VendorLogin: React.FC = () => {
                   }`}>
                     <ShieldAlert size={16} className={`${isLightTheme ? 'text-red-600' : 'text-danger'} shrink-0 mt-0.5`} />
                     <div>
-                      <span className={`${isLightTheme ? 'text-red-700' : 'text-red-650'} font-bold block mb-0.5 text-[10px] uppercase tracking-wider`}>Secure Access Error</span>
+                      <span className={`${isLightTheme ? 'text-red-700' : 'text-red-600'} font-bold block mb-0.5 text-[10px] uppercase tracking-wider`}>Secure Access Error</span>
                       {lookupError}
                       {/* Sub-hint to guide the user back to the links */}
                       <p className="mt-2 text-[10px] text-zinc-400">
-                        Or go back to <a href="/vendor/login" className="underline font-semibold text-indigo-550">General Login</a> to view direct links.
+                        Or go back to <a href="/vendor/login" className="underline font-semibold text-indigo-500">General Login</a> to view direct links.
                       </p>
                     </div>
+                  </div>
+                )}
+                {/* Login error banner */}
+                {error && (
+                  <div
+                    role="alert"
+                    className={`mb-6 p-3.5 border rounded-lg text-sm font-medium transition-all duration-500 ${
+                      isLightTheme ? 'bg-red-50 border-red-200/60 text-red-700' : 'bg-danger/10 border-danger/20 text-danger'
+                    }`}
+                  >
+                    {error}
                   </div>
                 )}
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -488,7 +500,7 @@ const VendorLogin: React.FC = () => {
                   <div className="relative group">
                     <div className={`flex items-center gap-4 border-b py-2.5 transition-colors duration-300 ${
                       isLightTheme 
-                        ? 'border-zinc-200 group-focus-within:border-indigo-650' 
+                        ? 'border-zinc-200 group-focus-within:border-indigo-600' 
                         : 'border-zinc-700 group-focus-within:border-indigo-500'
                     }`}>
                       <Mail size={18} className={`transition-colors duration-300 ${
@@ -514,7 +526,7 @@ const VendorLogin: React.FC = () => {
                   <div className="relative group">
                     <div className={`flex items-center gap-4 border-b py-2.5 transition-colors duration-300 ${
                       isLightTheme 
-                        ? 'border-zinc-200 group-focus-within:border-indigo-650' 
+                        ? 'border-zinc-200 group-focus-within:border-indigo-600' 
                         : 'border-zinc-700 group-focus-within:border-indigo-500'
                     }`}>
                       <LockIcon size={18} className={`transition-colors duration-300 ${
@@ -537,6 +549,7 @@ const VendorLogin: React.FC = () => {
                         type="button"
                         disabled={disableFormFields}
                         onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
                         className={`absolute right-1 transition-colors duration-200 disabled:opacity-40 ${
                           isLightTheme ? 'text-zinc-400 hover:text-zinc-950' : 'text-zinc-500 hover:text-white'
                         }`}
@@ -572,7 +585,7 @@ const VendorLogin: React.FC = () => {
 
       {/* Footer */}
       <footer className={`w-full text-center py-6 text-[10px] uppercase tracking-[0.25em] relative z-10 border-t transition-all duration-500 ${
-        isLightTheme ? 'border-zinc-200/50 bg-zinc-50/50 text-zinc-500' : 'border-zinc-900/50 bg-black/10 text-zinc-650'
+        isLightTheme ? 'border-zinc-200/50 bg-zinc-50/50 text-zinc-500' : 'border-zinc-900/50 bg-black/10 text-zinc-600'
       }`}>
         © 2026 Vendor Auction Hub | Secure Enterprise Procurement Platform
       </footer>
@@ -602,7 +615,7 @@ const VendorLogin: React.FC = () => {
                 <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold block mb-1">Didn't receive your credentials?</span>
                 <ul className="list-disc pl-4 space-y-1 mt-1 text-xs">
                   <li>Check your spam/junk folder for emails from <code className={`px-1 py-0.5 rounded transition-colors ${
-                    isLightTheme ? 'text-zinc-800 bg-zinc-100' : 'text-zinc-250 bg-zinc-900'
+                    isLightTheme ? 'text-zinc-800 bg-zinc-100' : 'text-zinc-200 bg-zinc-900'
                   }`}>noreply@blackbox.com</code>.</li>
                   <li>Ensure the invitation email was sent to your registered vendor inbox.</li>
                   <li>Contact the Auction Administrator to request a credentials resend.</li>
@@ -624,8 +637,8 @@ const VendorLogin: React.FC = () => {
               onClick={() => setShowHelpModal(false)}
               className={`mt-6 w-full rounded-xl font-semibold py-2.5 text-xs transition border ${
                 isLightTheme 
-                  ? 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-850' 
-                  : 'bg-zinc-850 hover:bg-zinc-800 border-zinc-700/60 text-white'
+                  ? 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-800' 
+                  : 'bg-zinc-800 hover:bg-zinc-800 border-zinc-700/60 text-white'
               }`}
             >
               Close Help
@@ -644,7 +657,7 @@ const VendorLogin: React.FC = () => {
               type="button"
               onClick={() => setShowContactModal(false)}
               className={`absolute top-4 right-4 transition-colors ${
-                isLightTheme ? 'text-zinc-400 hover:text-zinc-850' : 'text-zinc-500 hover:text-white'
+                isLightTheme ? 'text-zinc-400 hover:text-zinc-800' : 'text-zinc-500 hover:text-white'
               }`}
             >
               <X size={18} />
@@ -661,7 +674,7 @@ const VendorLogin: React.FC = () => {
               }`}>
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-500">Support Email</span>
-                  <a href="mailto:support@blackbox.com" className="text-indigo-650 hover:underline">support@blackbox.com</a>
+                  <a href="mailto:support@blackbox.com" className="text-indigo-600 hover:underline">support@blackbox.com</a>
                 </div>
 
                 <div className="flex justify-between items-center">
@@ -675,8 +688,8 @@ const VendorLogin: React.FC = () => {
               onClick={() => setShowContactModal(false)}
               className={`mt-6 w-full rounded-xl font-semibold py-2.5 text-xs transition border ${
                 isLightTheme 
-                  ? 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-850' 
-                  : 'bg-zinc-850 hover:bg-zinc-800 border-zinc-700/60 text-white'
+                  ? 'bg-zinc-100 hover:bg-zinc-200 border-zinc-200 text-zinc-800' 
+                  : 'bg-zinc-800 hover:bg-zinc-800 border-zinc-700/60 text-white'
               }`}
             >
               Close

@@ -5,12 +5,10 @@ import { prisma } from '../config/db';
 import { AppError } from '../middleware/errorHandlers';
 import { logger } from '../utils/logger';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+import { env } from '../config/env';
 
-if (!JWT_SECRET || !JWT_REFRESH_SECRET) {
-  throw new Error('FATAL: JWT secrets are not configured in environment variables.');
-}
+const JWT_SECRET = env.jwtSecret;
+const JWT_REFRESH_SECRET = env.jwtRefreshSecret;
 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -25,8 +23,9 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       include: { company: true },
     });
 
-    if (!user) {
-      // Security rule: Generic error message to prevent enumeration
+    if (!user || user.role === 'VENDOR') {
+      // Security rule: generic error message to prevent account enumeration.
+      // Vendors must use the dedicated per-auction vendor login flow.
       return next(new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS'));
     }
 
@@ -197,6 +196,29 @@ export const vendorLogin = async (req: Request, res: Response, next: NextFunctio
 
     if (!isMatch) {
       return next(new AppError('Invalid username or password', 401, 'INVALID_CREDENTIALS'));
+    }
+
+    // Authorization: the vendor must actually be an invited, unblocked participant
+    // of the requested auction. Without this check, any vendor could mint a token
+    // scoped to an arbitrary auction and receive its live bid broadcasts.
+    if (auctionId) {
+      const participant = await prisma.participant.findFirst({
+        where: {
+          auctionId,
+          vendor: { email: user.email },
+        },
+        include: { auction: { select: { state: true } } },
+      });
+
+      if (!participant) {
+        return next(new AppError('You are not an invited participant of this auction', 403, 'NOT_A_PARTICIPANT'));
+      }
+      if (participant.blocked) {
+        return next(new AppError('Your access to this auction has been restricted', 403, 'BLOCKED'));
+      }
+      if (participant.auction.state === 'COMPLETED' || participant.auction.state === 'CANCELLED') {
+        return next(new AppError('This bidding session has ended. Credentials are no longer valid.', 401, 'VENDOR_SESSION_EXPIRED'));
+      }
     }
 
     // Sign Access Token containing VENDOR role and the target auctionId

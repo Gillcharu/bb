@@ -1,21 +1,36 @@
-FROM node:20-alpine
+# ---- Build stage ----
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Copy dependency files
 COPY package*.json ./
+RUN npm ci
 
-# Install dependencies
-RUN npm install
-
-# Copy database schema and generate Prisma client
 COPY prisma ./prisma
 RUN npx prisma generate
 
-# Copy application files
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
+
+# ---- Production stage ----
+FROM node:20-alpine AS production
+
+ENV NODE_ENV=production
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY prisma ./prisma
+RUN npx prisma generate
+
+COPY --from=build /app/dist ./dist
+
+# Run as unprivileged user
+USER node
 
 EXPOSE 4000
 
-# Start server in development mode
-CMD ["npm", "run", "dev"]
+# Apply pending migrations, then start the compiled server (no dev tooling in prod)
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]

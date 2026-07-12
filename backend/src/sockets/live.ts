@@ -1,8 +1,18 @@
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../config/db';
+import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { AuctionState } from '@prisma/client';
+
+interface SocketUser {
+  id: string;
+  email: string;
+  role: 'SYSTEM_ADMIN' | 'AUCTION_OWNER' | 'APPROVER' | 'OBSERVER' | 'VENDOR';
+  companyId: string;
+  auctionId?: string;
+  exp?: number;
+}
 
 export const setupSocketLiveEngine = (io: Server) => {
   // Enforce JWT token verification middleware for all Socket.IO connections
@@ -14,20 +24,7 @@ export const setupSocketLiveEngine = (io: Server) => {
     }
 
     try {
-      const JWT_SECRET = process.env.JWT_SECRET;
-      if (!JWT_SECRET) {
-        return next(new Error('Server configuration error: JWT secret not defined'));
-      }
-
-      const decoded = jwt.verify(token, JWT_SECRET) as {
-        id: string;
-        email: string;
-        role: 'SYSTEM_ADMIN' | 'AUCTION_OWNER' | 'APPROVER' | 'OBSERVER' | 'VENDOR';
-        companyId: string;
-        auctionId?: string;
-      };
-
-      // Store verified token payload inside socket session state
+      const decoded = jwt.verify(token, env.jwtSecret) as SocketUser;
       socket.data.user = decoded;
       return next();
     } catch (err) {
@@ -37,30 +34,86 @@ export const setupSocketLiveEngine = (io: Server) => {
   });
 
   io.on('connection', (socket: Socket) => {
-    const user = socket.data.user;
+    const user = socket.data.user as SocketUser | undefined;
     if (!user) {
-      socket.disconnect();
+      socket.disconnect(true);
       return;
     }
     logger.info(`Socket connected: ${socket.id} (User: ${user.email}, Role: ${user.role})`);
 
-    socket.on('join', async (data: { auctionId: string }) => {
-      const { auctionId } = data;
-      if (!auctionId) return;
+    // Mid-session expiry enforcement 1/2: force-disconnect the socket the moment
+    // its JWT expires, so an expired session cannot keep receiving broadcasts.
+    let expiryTimer: NodeJS.Timeout | undefined;
+    if (user.exp) {
+      const msUntilExpiry = user.exp * 1000 - Date.now();
+      if (msUntilExpiry <= 0) {
+        socket.disconnect(true);
+        return;
+      }
+      expiryTimer = setTimeout(() => {
+        logger.info(`Socket ${socket.id} disconnected: token expired mid-session (${user.email})`);
+        socket.emit('session.expired', { reason: 'TOKEN_EXPIRED' });
+        socket.disconnect(true);
+      }, msUntilExpiry);
+    }
 
-      // Enforce strict server-side authorization checks using verified token payload
-      if (user.role === 'VENDOR') {
-        if (user.auctionId !== auctionId) {
-          logger.warn(`Unauthorized join blocked: Vendor ${user.email} attempted to access auction ID: ${auctionId}`);
+    // Mid-session expiry enforcement 2/2: reject any event arriving after expiry
+    // (covers clock drift and long-lived sockets without an exp claim).
+    socket.use((_event, next) => {
+      if (user.exp && user.exp * 1000 <= Date.now()) {
+        socket.emit('session.expired', { reason: 'TOKEN_EXPIRED' });
+        socket.disconnect(true);
+        return;
+      }
+      next();
+    });
+
+    socket.on('join', async (data: { auctionId?: string }) => {
+      try {
+        const auctionId = data?.auctionId;
+        if (!auctionId || typeof auctionId !== 'string') {
+          socket.emit('join.rejected', { reason: 'INVALID_AUCTION' });
           return;
         }
-        socket.join(`auction:${auctionId}`);
-        socket.join(`auction:${auctionId}:vendor:${user.id}`);
-        logger.info(`Verified Vendor ${user.email} joined rooms for auction: ${auctionId}`);
-      } else if (['SYSTEM_ADMIN', 'AUCTION_OWNER', 'APPROVER', 'OBSERVER'].includes(user.role)) {
-        socket.join(`auction:${auctionId}`);
-        socket.join(`auction:${auctionId}:admin`);
-        logger.info(`Verified Staff ${user.email} (${user.role}) joined rooms for auction: ${auctionId}`);
+
+        if (user.role === 'VENDOR') {
+          // Vendors may only join the auction their session token is scoped to,
+          // and must be an invited, unblocked participant.
+          if (user.auctionId !== auctionId) {
+            logger.warn(`Unauthorized join blocked: Vendor ${user.email} attempted auction ${auctionId}`);
+            socket.emit('join.rejected', { reason: 'FORBIDDEN' });
+            return;
+          }
+          const participant = await prisma.participant.findFirst({
+            where: { auctionId, vendor: { email: user.email } },
+            select: { blocked: true },
+          });
+          if (!participant) {
+            logger.warn(`Unauthorized join blocked: ${user.email} is not a participant of auction ${auctionId}`);
+            socket.emit('join.rejected', { reason: 'NOT_A_PARTICIPANT' });
+            return;
+          }
+          await socket.join(`auction:${auctionId}`);
+          await socket.join(`auction:${auctionId}:vendor:${user.id}`);
+          socket.emit('join.accepted', { auctionId });
+        } else if (['SYSTEM_ADMIN', 'AUCTION_OWNER', 'APPROVER', 'OBSERVER'].includes(user.role)) {
+          // Staff may only observe auctions belonging to their own company.
+          const auction = await prisma.auction.findUnique({
+            where: { id: auctionId },
+            select: { companyId: true },
+          });
+          if (!auction || (user.role !== 'SYSTEM_ADMIN' && auction.companyId !== user.companyId)) {
+            logger.warn(`Unauthorized join blocked: Staff ${user.email} attempted out-of-scope auction ${auctionId}`);
+            socket.emit('join.rejected', { reason: 'FORBIDDEN' });
+            return;
+          }
+          await socket.join(`auction:${auctionId}`);
+          await socket.join(`auction:${auctionId}:admin`);
+          socket.emit('join.accepted', { auctionId });
+        }
+      } catch (err) {
+        logger.error('Socket join error:', { error: String(err) });
+        socket.emit('join.rejected', { reason: 'SERVER_ERROR' });
       }
     });
 
@@ -71,12 +124,17 @@ export const setupSocketLiveEngine = (io: Server) => {
     });
 
     socket.on('disconnect', () => {
+      if (expiryTimer) clearTimeout(expiryTimer);
       logger.info(`Socket disconnected: ${socket.id} (${user.email})`);
     });
   });
 
-  // Background ticker loop (checks active auctions every 1 second)
-  setInterval(async () => {
+  // Background ticker loop (checks active auctions every 1 second).
+  // Guarded so a slow database can never stack overlapping ticks.
+  let tickRunning = false;
+  const ticker = setInterval(async () => {
+    if (tickRunning) return;
+    tickRunning = true;
     try {
       const now = new Date();
 
@@ -88,6 +146,7 @@ export const setupSocketLiveEngine = (io: Server) => {
           },
           enabled: true,
         },
+        select: { id: true, endAt: true },
       });
 
       for (const auction of activeAuctions) {
@@ -97,55 +156,60 @@ export const setupSocketLiveEngine = (io: Server) => {
         const nowMs = now.getTime();
 
         if (nowMs >= endMs) {
-          // Auction has completed!
-          await prisma.auction.update({
-            where: { id: auction.id },
+          // Auction has completed. updateMany with a state guard makes the
+          // transition idempotent even if an admin stops it in the same tick.
+          const closed = await prisma.auction.updateMany({
+            where: { id: auction.id, state: { in: [AuctionState.LIVE, AuctionState.OVERTIME] } },
             data: { state: AuctionState.COMPLETED, enabled: false },
           });
 
-          // Log audit log event
-          await prisma.auditLog.create({
-            data: {
-              action: 'COMPLETED_AUTO',
-              entity: 'Auction',
-              entityId: auction.id,
-              actorRole: null,
-              payload: { reason: 'Authoritative server close time reached' },
-            },
-          });
+          if (closed.count > 0) {
+            await prisma.auditLog.create({
+              data: {
+                action: 'COMPLETED_AUTO',
+                entity: 'Auction',
+                entityId: auction.id,
+                actorRole: null,
+                payload: { reason: 'Authoritative server close time reached' },
+              },
+            });
 
-          // Broadcast closed status
-          io.to(`auction:${auction.id}`).emit('auction.closed', {
-            auctionId: auction.id,
-            state: AuctionState.COMPLETED,
-          });
+            io.to(`auction:${auction.id}`).emit('auction.closed', {
+              auctionId: auction.id,
+              state: AuctionState.COMPLETED,
+            });
 
-          logger.info(`Auction ${auction.id} automatically completed`);
+            logger.info(`Auction ${auction.id} automatically completed`);
+          }
         } else {
-          // Broadcast countdown timer update
+          // Broadcast countdown timer update. serverNow lets clients compute an
+          // offset so their displayed countdown never trusts the local clock.
           const remainingSeconds = Math.max(0, Math.floor((endMs - nowMs) / 1000));
           io.to(`auction:${auction.id}`).emit('auction.timer.updated', {
             auctionId: auction.id,
             remainingSeconds,
             endAt: auction.endAt,
+            serverNow: now.toISOString(),
           });
         }
       }
 
-      // Check upcoming auctions: automatically transition DRAFT/PUBLISHED to LIVE if startAt is reached!
+      // Automatically transition PUBLISHED auctions to LIVE once startAt is reached.
       const pendingAuctions = await prisma.auction.findMany({
         where: {
           state: AuctionState.PUBLISHED,
           enabled: true,
           startAt: { lte: now },
         },
+        select: { id: true },
       });
 
       for (const upcoming of pendingAuctions) {
-        await prisma.auction.update({
-          where: { id: upcoming.id },
+        const started = await prisma.auction.updateMany({
+          where: { id: upcoming.id, state: AuctionState.PUBLISHED },
           data: { state: AuctionState.LIVE },
         });
+        if (started.count === 0) continue;
 
         await prisma.auditLog.create({
           data: {
@@ -165,10 +229,14 @@ export const setupSocketLiveEngine = (io: Server) => {
           auctionId: upcoming.id,
         });
 
-        logger.info(`Auction ${upcoming.id} transition to LIVE automatically`);
+        logger.info(`Auction ${upcoming.id} transitioned to LIVE automatically`);
       }
     } catch (err) {
-      logger.error('Error in background auction timer loop:', err);
+      logger.error('Error in background auction timer loop:', { error: String(err) });
+    } finally {
+      tickRunning = false;
     }
   }, 1000);
+
+  ticker.unref();
 };

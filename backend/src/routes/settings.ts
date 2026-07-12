@@ -12,7 +12,14 @@ import {
 } from '../controllers/settings';
 import { authenticateJWT, requireRoles } from '../middleware/auth';
 import { authedRateLimiter } from '../middleware/rateLimiter';
-import { validateRequest, inviteUserSchema, createVendorSchema } from '../middleware/validate';
+import {
+  validateRequest,
+  inviteUserSchema,
+  createVendorSchema,
+  createTemplateSchema,
+  updateCompanySchema,
+  smtpTestSchema,
+} from '../middleware/validate';
 
 const router = Router();
 
@@ -25,7 +32,7 @@ router.post('/users', requireRoles(['SYSTEM_ADMIN', 'AUCTION_OWNER']), validateR
 
 // Company preferences settings
 router.get('/company', requireRoles(['SYSTEM_ADMIN', 'AUCTION_OWNER']), getCompanySettings);
-router.patch('/company', requireRoles(['SYSTEM_ADMIN', 'AUCTION_OWNER']), updateCompanySettings);
+router.patch('/company', requireRoles(['SYSTEM_ADMIN', 'AUCTION_OWNER']), validateRequest(updateCompanySchema), updateCompanySettings);
 
 // Vendor Master index
 router.get('/vendors', requireRoles(['SYSTEM_ADMIN', 'AUCTION_OWNER']), listVendors);
@@ -33,9 +40,9 @@ router.post('/vendors', requireRoles(['SYSTEM_ADMIN', 'AUCTION_OWNER']), validat
 
 // compliance Document Templates
 router.get('/templates', requireRoles(['SYSTEM_ADMIN', 'AUCTION_OWNER']), listTemplates);
-router.post('/templates', requireRoles(['SYSTEM_ADMIN', 'AUCTION_OWNER']), createTemplate);
+router.post('/templates', requireRoles(['SYSTEM_ADMIN', 'AUCTION_OWNER']), validateRequest(createTemplateSchema), createTemplate);
 
 // SMTP connector test trigger
-router.post('/smtp/test', requireRoles(['SYSTEM_ADMIN']), testSMTPConfig);
+router.post('/smtp/test', requireRoles(['SYSTEM_ADMIN']), validateRequest(smtpTestSchema), testSMTPConfig);
 
 export default router;

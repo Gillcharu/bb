@@ -86,8 +86,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement; allowedRoles?: st
           if (payload.auctionId) {
             return <Navigate to={`/vendor/auctions/${payload.auctionId}/terms`} replace />;
           }
-        } catch (e) {
-          console.error(e);
+        } catch {
+          // Malformed token: fall through to the vendor login redirect.
         }
       }
       return <Navigate to="/vendor/login" replace />;

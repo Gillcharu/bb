@@ -124,3 +124,45 @@ export const authedRateLimiter = (req: Request, res: Response, next: NextFunctio
   }
   return next();
 };
+
+// Per-user bid throttle: prevents bid-flooding a live auction from a single
+// account. Keyed by authenticated user id, not IP, so vendors behind a shared
+// corporate NAT are not unfairly throttled.
+const BID_MAX = parseInt(process.env.BID_MAX || '10');
+const BID_WINDOW_MS = parseInt(process.env.BID_WINDOW_MS || '10000'); // 10 seconds
+
+interface BidRate {
+  count: number;
+  windowStart: number;
+}
+const bidStores: { [userId: string]: BidRate } = {};
+
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(() => {
+    const now = Date.now();
+    for (const key in bidStores) {
+      if (now - bidStores[key].windowStart > BID_WINDOW_MS * 6) {
+        delete bidStores[key];
+      }
+    }
+  }, 60 * 1000);
+}
+
+export const bidRateLimiter = (req: Request, res: Response, next: NextFunction) => {
+  const key = req.user?.id || req.ip || 'unknown';
+  const now = Date.now();
+  const record = bidStores[key] || { count: 0, windowStart: now };
+
+  if (now - record.windowStart > BID_WINDOW_MS) {
+    record.count = 1;
+    record.windowStart = now;
+  } else {
+    record.count += 1;
+  }
+  bidStores[key] = record;
+
+  if (record.count > BID_MAX) {
+    return next(new AppError('You are submitting bids too quickly. Please wait a moment.', 429, 'TOO_MANY_REQUESTS'));
+  }
+  return next();
+};

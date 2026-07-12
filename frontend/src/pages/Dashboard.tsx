@@ -38,8 +38,8 @@ const Dashboard: React.FC = () => {
       try {
         const res = await axios.get(`${API_URL}/auctions`);
         setAuctions(res.data.data);
-      } catch (err) {
-        console.error('Failed to load dashboard statistics:', err);
+      } catch {
+        // Dashboard is non-critical; widgets show their empty states on failure.
       } finally {
         setLoading(false);
       }
@@ -165,7 +165,7 @@ const Dashboard: React.FC = () => {
                         {['LIVE', 'OVERTIME'].includes(auc.state) && <Radio size={9} className="animate-pulse" />}
                         {auc.state}
                       </span>
-                      <span className="text-[10px] font-mono text-neutral-400">{getAuctionDisplayId(auc.id, auc.title).id}</span>
+                      <span className="text-[10px] font-mono text-neutral-400">{getAuctionDisplayId(auc.id).id}</span>
                       <span className="text-[9px] text-zinc-400 flex items-center gap-1">
                         <Clock size={10} />
                         {getRelativeTimeString(auc.updatedAt)}
@@ -184,7 +184,7 @@ const Dashboard: React.FC = () => {
                         ? `/auctions/${auc.id}/live`
                         : `/auctions/${auc.id}`
                     )}
-                    className="text-xs font-bold bg-neutral-105 hover:bg-neutral-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-neutral-700 dark:text-slate-300 py-1.5 px-3 rounded-lg transition cursor-pointer"
+                    className="text-xs font-bold bg-neutral-100 hover:bg-neutral-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-neutral-700 dark:text-slate-300 py-1.5 px-3 rounded-lg transition cursor-pointer"
                   >
                     {['LIVE', 'OVERTIME'].includes(auc.state) ? 'Open Console' : 'View'}
                   </button>

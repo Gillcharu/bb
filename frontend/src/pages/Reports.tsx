@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { BarChart3, Clock, CheckCircle2, ArrowRight } from 'lucide-react';
+import { BarChart3, ArrowRight } from 'lucide-react';
 import { getAuctionDisplayId } from '../utils/auctionHelper';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
@@ -15,11 +15,11 @@ const Reports: React.FC = () => {
     const fetchCompleted = async () => {
       try {
         const res = await axios.get(`${API_URL}/auctions`);
-        // Filter completed/cancelled auctions for reporting
-        const completed = res.data.data.filter((a: any) => ['COMPLETED', 'CANCELLED', 'LIVE'].includes(a.state));
+        // Reports are compiled for finished auctions only
+        const completed = res.data.data.filter((a: any) => ['COMPLETED', 'CANCELLED'].includes(a.state));
         setAuctions(completed);
-      } catch (err) {
-        console.error('Error fetching completed auctions:', err);
+      } catch {
+        // Handled by the empty state below.
       } finally {
         setLoading(false);
       }
@@ -32,7 +32,7 @@ const Reports: React.FC = () => {
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-white flex items-center gap-2">
-          <BarChart3 size={20} className="text-indigo-650" />
+          <BarChart3 size={20} className="text-indigo-600" />
           Reporting Center
         </h1>
         <p className="text-xs text-neutral-500 mt-1">
@@ -57,7 +57,7 @@ const Reports: React.FC = () => {
                 <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-neutral-100 text-neutral-600 border border-neutral-200">
                   {auc.state}
                 </span>
-                <span className="text-[10px] font-mono text-neutral-400">#{getAuctionDisplayId(auc.id, auc.title).id}</span>
+                <span className="text-[10px] font-mono text-neutral-400">#{getAuctionDisplayId(auc.id).id}</span>
               </div>
 
               <div>

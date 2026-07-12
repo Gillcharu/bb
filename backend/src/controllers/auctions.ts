@@ -1,10 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
+import { Server } from 'socket.io';
 import { prisma } from '../config/db';
 import { AppError } from '../middleware/errorHandlers';
-import { AuctionState, Role } from '@prisma/client';
+import { AuctionState, Prisma, Role } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { logger } from '../utils/logger';
+
+const BCRYPT_COST = 12;
 
 // Helper to log system/user events to AuditLog
 const logAuditEvent = async (
@@ -29,30 +32,44 @@ const logAuditEvent = async (
       },
     });
   } catch (err) {
-    console.error('Audit log write error:', err);
+    logger.error('Audit log write error:', { error: String(err) });
   }
 };
+
+// Company scoping guard: staff may only operate on auctions belonging to their
+// own company. SYSTEM_ADMIN has cross-company access. Returns 404 (not 403) for
+// out-of-scope auctions so resource existence is never leaked.
+const assertCompanyScope = (req: Request, auction: { companyId: string } | null) => {
+  if (!auction) {
+    throw new AppError('Auction not found', 404, 'NOT_FOUND');
+  }
+  if (req.user!.role !== 'SYSTEM_ADMIN' && auction.companyId !== req.user!.companyId) {
+    throw new AppError('Auction not found', 404, 'NOT_FOUND');
+  }
+};
+
+const getIo = (req: Request): Server | undefined => req.app.get('io') as Server | undefined;
 
 // 1. List all auctions with filters
 export const listAuctions = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { status, type, search } = req.query;
+    const { status, search } = req.query;
 
-    const whereClause: any = {};
+    const whereClause: Prisma.AuctionWhereInput = {};
 
-    // Scope check: internal users see company's auctions, observers see assigned
-    if (req.user && req.user.role !== 'SYSTEM_ADMIN') {
-      whereClause.companyId = req.user.companyId;
+    // Scope check: internal users only see their own company's auctions.
+    if (req.user!.role !== 'SYSTEM_ADMIN') {
+      whereClause.companyId = req.user!.companyId;
     }
 
-    if (status) {
+    if (status && typeof status === 'string' && (Object.values(AuctionState) as string[]).includes(status)) {
       whereClause.state = status as AuctionState;
     }
 
-    if (search) {
+    if (search && typeof search === 'string') {
       whereClause.OR = [
-        { title: { contains: search as string, mode: 'insensitive' } },
-        { description: { contains: search as string, mode: 'insensitive' } },
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -62,13 +79,10 @@ export const listAuctions = async (req: Request, res: Response, next: NextFuncti
         owner: { select: { id: true, email: true } },
         approver: { select: { id: true, email: true } },
         bidRuleSnapshot: true,
-        participants: {
-          include: {
-            vendor: true,
-          },
-        },
+        participants: { select: { id: true, vendorId: true, blocked: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: 500,
     });
 
     return res.status(200).json({
@@ -80,28 +94,23 @@ export const listAuctions = async (req: Request, res: Response, next: NextFuncti
   }
 };
 
-// 2. Get public details (already defined but extended for safety)
+// 2. Public invitation-context lookup (UUID access links only)
 export const getPublicAuctionDetails = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
-    let auction: any = null;
-    const keyword = id.toLowerCase();
-
-    if (['draft', 'published', 'live', 'completed'].includes(keyword)) {
-      auction = await prisma.auction.findFirst({
-        where: { state: keyword.toUpperCase() as any },
-        select: { id: true, title: true, state: true, startAt: true, endAt: true },
-      });
-    } else {
-      auction = await prisma.auction.findUnique({
-        where: { id },
-        select: { id: true, title: true, state: true, startAt: true, endAt: true },
-      });
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_RE.test(id)) {
+      return next(new AppError('Auction not found or access link is invalid', 404, 'NOT_FOUND'));
     }
 
+    const auction = await prisma.auction.findUnique({
+      where: { id },
+      select: { id: true, title: true, state: true, startAt: true, endAt: true },
+    });
+
     if (!auction) {
-      return next(new AppError('Auction not found or access link is invalid', 404));
+      return next(new AppError('Auction not found or access link is invalid', 404, 'NOT_FOUND'));
     }
 
     return res.status(200).json({
@@ -131,18 +140,17 @@ export const getAuctionDetails = async (req: Request, res: Response, next: NextF
         },
         bids: {
           orderBy: { timestamp: 'desc' },
+          take: 500,
           include: {
             participant: {
-              include: { vendor: true },
+              include: { vendor: { select: { id: true, name: true } } },
             },
           },
         },
       },
     });
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
+    assertCompanyScope(req, auction);
 
     return res.status(200).json({
       success: true,
@@ -157,10 +165,6 @@ export const getAuctionDetails = async (req: Request, res: Response, next: NextF
 export const createAuction = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { title, description } = req.body;
-
-    if (!title) {
-      return next(new AppError('Auction title is required', 400));
-    }
 
     const auction = await prisma.auction.create({
       data: {
@@ -182,14 +186,7 @@ export const createAuction = async (req: Request, res: Response, next: NextFunct
       },
     });
 
-    await logAuditEvent(
-      'AUCTION_CREATED',
-      'Auction',
-      auction.id,
-      req.user?.id,
-      req.user?.role,
-      { title }
-    );
+    await logAuditEvent('AUCTION_CREATED', 'Auction', auction.id, req.user?.id, req.user?.role, { title });
 
     return res.status(201).json({
       success: true,
@@ -228,14 +225,30 @@ export const updateAuction = async (req: Request, res: Response, next: NextFunct
     } = req.body;
 
     const auction = await prisma.auction.findUnique({ where: { id } });
+    assertCompanyScope(req, auction);
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
-
-    if (auction.state !== AuctionState.DRAFT && auction.state !== AuctionState.REJECTED) {
+    if (auction!.state !== AuctionState.DRAFT && auction!.state !== AuctionState.REJECTED) {
       if (req.user?.role !== 'SYSTEM_ADMIN') {
         return next(new AppError('Cannot edit an auction that is already submitted or published', 400));
+      }
+    }
+
+    // Validate schedule against existing values when only one side changes.
+    const nextStartAt = startAt !== undefined ? (startAt ? new Date(startAt) : null) : auction!.startAt;
+    const nextEndAt = endAt !== undefined ? (endAt ? new Date(endAt) : null) : auction!.endAt;
+    if (nextStartAt && nextEndAt && nextEndAt.getTime() <= nextStartAt.getTime()) {
+      return next(new AppError('End time must be after start time', 400, 'INVALID_SCHEDULE'));
+    }
+
+    // Validate approver assignment: must be an APPROVER (or SYSTEM_ADMIN) in the same company.
+    if (approverId !== undefined && approverId !== null && approverId !== auction!.approverId) {
+      const approver = await prisma.user.findUnique({ where: { id: approverId } });
+      if (
+        !approver ||
+        approver.companyId !== auction!.companyId ||
+        (approver.role !== Role.APPROVER && approver.role !== Role.SYSTEM_ADMIN)
+      ) {
+        return next(new AppError('Assigned approver must be an Approver from your company', 400, 'INVALID_APPROVER'));
       }
     }
 
@@ -243,13 +256,13 @@ export const updateAuction = async (req: Request, res: Response, next: NextFunct
     const updatedAuction = await prisma.auction.update({
       where: { id },
       data: {
-        title: title !== undefined ? title : auction.title,
-        description: description !== undefined ? description : auction.description,
-        startAt: startAt !== undefined ? (startAt ? new Date(startAt) : null) : auction.startAt,
-        endAt: endAt !== undefined ? (endAt ? new Date(endAt) : null) : auction.endAt,
-        approverId: approverId !== undefined ? approverId : auction.approverId,
-        baseCurrency: baseCurrency !== undefined ? baseCurrency : auction.baseCurrency,
-        state: (req.user?.role === 'SYSTEM_ADMIN' && req.body.state !== undefined) ? req.body.state : auction.state,
+        title: title !== undefined ? title : auction!.title,
+        description: description !== undefined ? description : auction!.description,
+        startAt: nextStartAt,
+        endAt: nextEndAt,
+        approverId: approverId !== undefined ? approverId : auction!.approverId,
+        baseCurrency: baseCurrency !== undefined ? String(baseCurrency).toUpperCase() : auction!.baseCurrency,
+        state: req.user?.role === 'SYSTEM_ADMIN' && req.body.state ? req.body.state : auction!.state,
       },
     });
 
@@ -280,7 +293,7 @@ export const updateAuction = async (req: Request, res: Response, next: NextFunct
           overtimeWindowMins: overtimeWindowMins !== undefined ? Number(overtimeWindowMins) : 3,
           overtimeExtensionMins: overtimeExtensionMins !== undefined ? Number(overtimeExtensionMins) : 5,
           overtimeTriggerRank: overtimeTriggerRank !== undefined ? String(overtimeTriggerRank) : 'RANK_1',
-          maxExtensions: maxExtensions !== undefined ? (maxExtensions ? Number(maxExtensions) : null) : null,
+          maxExtensions: maxExtensions !== undefined && maxExtensions !== null ? Number(maxExtensions) : null,
           rankVisibility: rankVisibility !== undefined ? String(rankVisibility) : 'OWN_RANK_ONLY',
         },
         update: {
@@ -293,7 +306,7 @@ export const updateAuction = async (req: Request, res: Response, next: NextFunct
           overtimeWindowMins: overtimeWindowMins !== undefined ? Number(overtimeWindowMins) : undefined,
           overtimeExtensionMins: overtimeExtensionMins !== undefined ? Number(overtimeExtensionMins) : undefined,
           overtimeTriggerRank: overtimeTriggerRank !== undefined ? String(overtimeTriggerRank) : undefined,
-          maxExtensions: maxExtensions !== undefined ? (maxExtensions ? Number(maxExtensions) : null) : undefined,
+          maxExtensions: maxExtensions !== undefined ? (maxExtensions !== null ? Number(maxExtensions) : null) : undefined,
           rankVisibility: rankVisibility !== undefined ? String(rankVisibility) : undefined,
         },
       });
@@ -301,30 +314,33 @@ export const updateAuction = async (req: Request, res: Response, next: NextFunct
 
     // Handle participant additions/removals
     if (participantVendorIds && Array.isArray(participantVendorIds)) {
-      // Clear existing participants
-      await prisma.participant.deleteMany({
-        where: { auctionId: id },
-      });
+      const uniqueVendorIds: string[] = [...new Set(participantVendorIds as string[])];
 
-      // Insert new participants
-      const participantCreates = participantVendorIds.map((vendorId: string) => ({
-        auctionId: id,
-        vendorId,
-      }));
+      // Participants cannot be replaced once bids exist — that would orphan bid
+      // records and corrupt the audit ledger.
+      const bidCount = await prisma.bid.count({ where: { auctionId: id } });
+      if (bidCount > 0) {
+        return next(new AppError('Participants cannot be changed after bids have been placed', 400, 'BIDS_EXIST'));
+      }
 
-      await prisma.participant.createMany({
-        data: participantCreates,
+      // Every vendor must belong to the auction's company.
+      const vendors = await prisma.vendor.findMany({
+        where: { id: { in: uniqueVendorIds }, companyId: auction!.companyId },
+        select: { id: true },
       });
+      if (vendors.length !== uniqueVendorIds.length) {
+        return next(new AppError('One or more selected vendors were not found in your vendor directory', 400, 'INVALID_VENDORS'));
+      }
+
+      await prisma.$transaction([
+        prisma.participant.deleteMany({ where: { auctionId: id } }),
+        prisma.participant.createMany({
+          data: uniqueVendorIds.map((vendorId: string) => ({ auctionId: id, vendorId })),
+        }),
+      ]);
     }
 
-    await logAuditEvent(
-      'AUCTION_UPDATED',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role,
-      req.body
-    );
+    await logAuditEvent('AUCTION_UPDATED', 'Auction', id, req.user?.id, req.user?.role, req.body);
 
     return res.status(200).json({
       success: true,
@@ -344,16 +360,13 @@ export const submitForApproval = async (req: Request, res: Response, next: NextF
       where: { id },
       include: { approver: true },
     });
+    assertCompanyScope(req, auction);
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
-
-    if (auction.state !== AuctionState.DRAFT && auction.state !== AuctionState.REJECTED) {
+    if (auction!.state !== AuctionState.DRAFT && auction!.state !== AuctionState.REJECTED) {
       return next(new AppError('Auction must be in DRAFT or REJECTED state to submit for approval', 400));
     }
 
-    if (!auction.approverId) {
+    if (!auction!.approverId) {
       return next(new AppError('An assigned Approver is required before submitting', 400));
     }
 
@@ -362,14 +375,9 @@ export const submitForApproval = async (req: Request, res: Response, next: NextF
       data: { state: AuctionState.PENDING_APPROVAL },
     });
 
-    await logAuditEvent(
-      'SUBMITTED_FOR_APPROVAL',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role,
-      { approver: auction.approver?.email }
-    );
+    await logAuditEvent('SUBMITTED_FOR_APPROVAL', 'Auction', id, req.user?.id, req.user?.role, {
+      approver: auction!.approver?.email,
+    });
 
     return res.status(200).json({
       success: true,
@@ -386,17 +394,15 @@ export const approveAuction = async (req: Request, res: Response, next: NextFunc
     const { id } = req.params;
 
     const auction = await prisma.auction.findUnique({ where: { id } });
+    assertCompanyScope(req, auction);
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
-
-    if (auction.state !== AuctionState.PENDING_APPROVAL) {
+    if (auction!.state !== AuctionState.PENDING_APPROVAL) {
       return next(new AppError('Auction is not awaiting approval', 400));
     }
 
-    if (req.user?.role !== Role.APPROVER && req.user?.role !== Role.SYSTEM_ADMIN) {
-      return next(new AppError('Only the assigned Approver can approve this auction', 403));
+    // Only the assigned approver (or a system admin) can decide.
+    if (req.user!.role !== Role.SYSTEM_ADMIN && req.user!.id !== auction!.approverId) {
+      return next(new AppError('Only the assigned Approver can approve this auction', 403, 'FORBIDDEN'));
     }
 
     const updated = await prisma.auction.update({
@@ -404,13 +410,7 @@ export const approveAuction = async (req: Request, res: Response, next: NextFunc
       data: { state: AuctionState.APPROVED },
     });
 
-    await logAuditEvent(
-      'APPROVED',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role
-    );
+    await logAuditEvent('APPROVED', 'Auction', id, req.user?.id, req.user?.role);
 
     return res.status(200).json({
       success: true,
@@ -427,22 +427,15 @@ export const rejectAuction = async (req: Request, res: Response, next: NextFunct
     const { id } = req.params;
     const { comment } = req.body;
 
-    if (!comment || comment.trim().length < 10) {
-      return next(new AppError('A reject comment of at least 10 characters is required', 400));
-    }
-
     const auction = await prisma.auction.findUnique({ where: { id } });
+    assertCompanyScope(req, auction);
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
-
-    if (auction.state !== AuctionState.PENDING_APPROVAL) {
+    if (auction!.state !== AuctionState.PENDING_APPROVAL) {
       return next(new AppError('Auction is not awaiting approval', 400));
     }
 
-    if (req.user?.role !== Role.APPROVER && req.user?.role !== Role.SYSTEM_ADMIN) {
-      return next(new AppError('Only the assigned Approver can reject this auction', 403));
+    if (req.user!.role !== Role.SYSTEM_ADMIN && req.user!.id !== auction!.approverId) {
+      return next(new AppError('Only the assigned Approver can reject this auction', 403, 'FORBIDDEN'));
     }
 
     const updated = await prisma.auction.update({
@@ -450,14 +443,7 @@ export const rejectAuction = async (req: Request, res: Response, next: NextFunct
       data: { state: AuctionState.REJECTED },
     });
 
-    await logAuditEvent(
-      'REJECTED',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role,
-      { comment }
-    );
+    await logAuditEvent('REJECTED', 'Auction', id, req.user?.id, req.user?.role, { comment });
 
     return res.status(200).json({
       success: true,
@@ -477,45 +463,66 @@ export const validatePublish = async (req: Request, res: Response, next: NextFun
       where: { id },
       include: {
         bidRuleSnapshot: true,
-        participants: {
-          include: { vendor: true },
-        },
+        participants: { select: { id: true } },
       },
     });
+    assertCompanyScope(req, auction);
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
-
-    const checklist: any[] = [];
+    const checklist: { name: string; passed: boolean; message: string }[] = [];
 
     // 1. Details check
-    const hasDetails = !!auction.title && !!auction.description;
-    checklist.push({ name: 'Auction details complete', passed: hasDetails, message: hasDetails ? 'Passed' : 'Missing title or description' });
+    const hasDetails = !!auction!.title && !!auction!.description;
+    checklist.push({
+      name: 'Auction details complete',
+      passed: hasDetails,
+      message: hasDetails ? 'Passed' : 'Missing title or description',
+    });
 
     // 2. Dates check
     const now = new Date();
-    const hasValidDates = !!auction.startAt && !!auction.endAt && auction.startAt > now && auction.endAt > auction.startAt;
-    checklist.push({ name: 'Valid auction schedule', passed: hasValidDates, message: hasValidDates ? 'Passed' : 'Start time must be in the future, and end time must follow start time' });
+    const hasValidDates =
+      !!auction!.startAt && !!auction!.endAt && auction!.startAt > now && auction!.endAt > auction!.startAt;
+    checklist.push({
+      name: 'Valid auction schedule',
+      passed: hasValidDates,
+      message: hasValidDates ? 'Passed' : 'Start time must be in the future, and end time must follow start time',
+    });
 
     // 3. Participants check
-    const hasVendors = auction.participants.length > 0;
-    checklist.push({ name: 'Vendor participants assigned', passed: hasVendors, message: hasVendors ? `${auction.participants.length} vendor(s) mapped` : 'At least one participant required' });
+    const hasVendors = auction!.participants.length > 0;
+    checklist.push({
+      name: 'Vendor participants assigned',
+      passed: hasVendors,
+      message: hasVendors ? `${auction!.participants.length} vendor(s) mapped` : 'At least one participant required',
+    });
 
     // 4. Documents check
-    const termsDoc = await prisma.documentTemplate.findFirst({ where: { type: 'TERMS' } });
-    const disclosureDoc = await prisma.documentTemplate.findFirst({ where: { type: 'DISCLOSURE' } });
-    const rulesDoc = await prisma.documentTemplate.findFirst({ where: { type: 'RULES' } });
-    const hasDocs = !!termsDoc && !!disclosureDoc && !!rulesDoc;
-    checklist.push({ name: 'Terms & disclosures attached', passed: hasDocs, message: hasDocs ? 'Verified templates loaded' : 'Default compliance document templates missing' });
+    const docTypes = await prisma.documentTemplate.groupBy({ by: ['type'] });
+    const availableTypes = docTypes.map(d => d.type);
+    const hasDocs = ['TERMS', 'DISCLOSURE', 'RULES'].every(t => availableTypes.includes(t));
+    checklist.push({
+      name: 'Terms & disclosures attached',
+      passed: hasDocs,
+      message: hasDocs
+        ? 'Verified templates loaded'
+        : 'Create TERMS, DISCLOSURE and RULES templates in Settings before publishing',
+    });
 
     // 5. Bid rules check
-    const hasRules = !!auction.bidRuleSnapshot;
-    checklist.push({ name: 'Pricing rules snapshot generated', passed: hasRules, message: hasRules ? 'Passed' : 'Verify step 2 rule configurations' });
+    const hasRules = !!auction!.bidRuleSnapshot;
+    checklist.push({
+      name: 'Pricing rules snapshot generated',
+      passed: hasRules,
+      message: hasRules ? 'Passed' : 'Verify step 2 rule configurations',
+    });
 
     // 6. Approval check
-    const isApproved = auction.state === AuctionState.APPROVED;
-    checklist.push({ name: 'All required approvals obtained', passed: isApproved, message: isApproved ? 'Approved by supervisor' : 'Auction must be APPROVED before publishing' });
+    const isApproved = auction!.state === AuctionState.APPROVED;
+    checklist.push({
+      name: 'All required approvals obtained',
+      passed: isApproved,
+      message: isApproved ? 'Approved by supervisor' : 'Auction must be APPROVED before publishing',
+    });
 
     const allPassed = checklist.every(c => c.passed);
 
@@ -542,42 +549,37 @@ export const publishAuction = async (req: Request, res: Response, next: NextFunc
         },
       },
     });
+    assertCompanyScope(req, auction);
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
-
-    if (auction.state !== AuctionState.APPROVED) {
+    if (auction!.state !== AuctionState.APPROVED) {
       return next(new AppError('Auction must be APPROVED to publish', 400));
     }
 
-    // Automatically create VENDOR user login credentials if they don't exist
-    for (const participant of auction.participants) {
+    if (!auction!.startAt || !auction!.endAt || auction!.startAt <= new Date() || auction!.endAt <= auction!.startAt) {
+      return next(new AppError('Auction schedule is invalid; run publish validation first', 400, 'INVALID_SCHEDULE'));
+    }
+
+    // Automatically create VENDOR user login credentials if they don't exist.
+    // Credential distribution happens out-of-band (mail connector); plaintext
+    // passwords are never logged or returned by the API.
+    for (const participant of auction!.participants) {
       const vendorEmail = participant.vendor.email;
-      
-      // Upsert a VENDOR role user matching this vendor email
-      let user = await prisma.user.findUnique({ where: { email: vendorEmail } });
-      if (!user) {
-        // Generate a cryptographically secure random temporary password
-        const temporaryPassword = crypto.randomBytes(12).toString('hex');
-        const passwordHash = await bcrypt.hash(temporaryPassword, 10);
-        user = await prisma.user.create({
+
+      const existing = await prisma.user.findUnique({ where: { email: vendorEmail } });
+      if (!existing) {
+        const temporaryPassword = crypto.randomBytes(16).toString('hex');
+        const passwordHash = await bcrypt.hash(temporaryPassword, BCRYPT_COST);
+        await prisma.user.create({
           data: {
             email: vendorEmail,
             password: passwordHash,
             role: Role.VENDOR,
-            companyId: auction.companyId,
+            companyId: auction!.companyId,
           },
         });
-        logger.info(`Generated secure vendor credentials for ${vendorEmail}`);
-        if (process.env.NODE_ENV !== 'production') {
-          // SECURITY NOTE: Outputting plaintext credentials only during local development/evaluation setup.
-          // This will be replaced by a secure mail dispatch connector in production.
-          console.warn(`[LOCAL DEV ONLY] Temporary password for ${vendorEmail} is: ${temporaryPassword}`);
-        }
+        logger.info(`Generated vendor credentials for ${vendorEmail}`);
       }
 
-      // Update participant record to show they are invited
       await prisma.participant.update({
         where: { id: participant.id },
         data: { invitedAt: new Date() },
@@ -589,14 +591,9 @@ export const publishAuction = async (req: Request, res: Response, next: NextFunc
       data: { state: AuctionState.PUBLISHED, enabled: true },
     });
 
-    await logAuditEvent(
-      'PUBLISHED',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role,
-      { invitedCount: auction.participants.length }
-    );
+    await logAuditEvent('PUBLISHED', 'Auction', id, req.user?.id, req.user?.role, {
+      invitedCount: auction!.participants.length,
+    });
 
     return res.status(200).json({
       success: true,
@@ -619,51 +616,53 @@ export const duplicateAuction = async (req: Request, res: Response, next: NextFu
         participants: true,
       },
     });
-
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
+    assertCompanyScope(req, auction);
 
     // Clone base auction properties
     const newAuction = await prisma.auction.create({
       data: {
-        title: `${auction.title} (Copy)`,
-        description: auction.description,
+        title: `${auction!.title} (Copy)`,
+        description: auction!.description,
         state: AuctionState.DRAFT,
-        companyId: auction.companyId,
+        companyId: auction!.companyId,
         ownerId: req.user!.id,
       },
     });
 
-    // Clone rules
-    if (auction.bidRuleSnapshot) {
+    // Clone the full rule configuration (not just pricing factors)
+    if (auction!.bidRuleSnapshot) {
+      const r = auction!.bidRuleSnapshot;
       await prisma.bidRuleSnapshot.create({
         data: {
           auctionId: newAuction.id,
-          conversionRate: auction.bidRuleSnapshot.conversionRate,
-          loadingPercent: auction.bidRuleSnapshot.loadingPercent,
-          fixedLoading: auction.bidRuleSnapshot.fixedLoading,
+          conversionRate: r.conversionRate,
+          loadingPercent: r.loadingPercent,
+          fixedLoading: r.fixedLoading,
+          minDecrement: r.minDecrement,
+          auctionType: r.auctionType,
+          overtimeEnabled: r.overtimeEnabled,
+          overtimeWindowMins: r.overtimeWindowMins,
+          overtimeExtensionMins: r.overtimeExtensionMins,
+          overtimeTriggerRank: r.overtimeTriggerRank,
+          maxExtensions: r.maxExtensions,
+          rankVisibility: r.rankVisibility,
         },
       });
     }
 
     // Clone participant list
-    if (auction.participants.length > 0) {
-      const cloner = auction.participants.map(p => ({
-        auctionId: newAuction.id,
-        vendorId: p.vendorId,
-      }));
-      await prisma.participant.createMany({ data: cloner });
+    if (auction!.participants.length > 0) {
+      await prisma.participant.createMany({
+        data: auction!.participants.map(p => ({
+          auctionId: newAuction.id,
+          vendorId: p.vendorId,
+        })),
+      });
     }
 
-    await logAuditEvent(
-      'AUCTION_DUPLICATED',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role,
-      { newAuctionId: newAuction.id }
-    );
+    await logAuditEvent('AUCTION_DUPLICATED', 'Auction', id, req.user?.id, req.user?.role, {
+      newAuctionId: newAuction.id,
+    });
 
     return res.status(201).json({
       success: true,
@@ -681,9 +680,10 @@ export const cancelAuction = async (req: Request, res: Response, next: NextFunct
     const { comment } = req.body;
 
     const auction = await prisma.auction.findUnique({ where: { id } });
+    assertCompanyScope(req, auction);
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
+    if (auction!.state === AuctionState.COMPLETED || auction!.state === AuctionState.CANCELLED) {
+      return next(new AppError('This auction has already ended and cannot be cancelled', 400));
     }
 
     const updated = await prisma.auction.update({
@@ -691,14 +691,15 @@ export const cancelAuction = async (req: Request, res: Response, next: NextFunct
       data: { state: AuctionState.CANCELLED, enabled: false },
     });
 
-    await logAuditEvent(
-      'CANCELLED',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role,
-      { comment }
-    );
+    await logAuditEvent('CANCELLED', 'Auction', id, req.user?.id, req.user?.role, { comment });
+
+    const io = getIo(req);
+    if (io) {
+      io.to(`auction:${id}`).emit('auction.closed', {
+        auctionId: id,
+        state: AuctionState.CANCELLED,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -710,37 +711,26 @@ export const cancelAuction = async (req: Request, res: Response, next: NextFunct
 };
 
 // 13. Submit Bid (Vendor / Surrogate)
-import { Server } from 'socket.io';
-
+//
+// Concurrency model: every bid for a given auction is serialized by taking a
+// row-level lock (SELECT ... FOR UPDATE) on the Auction row inside a single
+// transaction. All validation (state, schedule, decrement rule) and the bid
+// insert + overtime extension happen while the lock is held, so two bids
+// arriving in the same millisecond can never both pass the decrement check or
+// both extend the timer.
 export const submitBid = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const { amount, note, vendorId } = req.body;
+    const { amount, vendorId } = req.body;
 
-    if (!amount || Number(amount) <= 0) {
-      return next(new AppError('A positive bid amount is required', 400));
-    }
-
-    const auction = await prisma.auction.findUnique({
-      where: { id },
-      include: { bidRuleSnapshot: true },
-    });
-
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
-
-    if (auction.state !== AuctionState.LIVE && auction.state !== AuctionState.OVERTIME) {
-      return next(new AppError('This auction is not currently accepting bids', 400, 'NOT_LIVE'));
-    }
-
-    if (!auction.enabled) {
-      return next(new AppError('This auction is currently paused/disabled by the administrator', 400, 'NOT_LIVE'));
-    }
-
-    // Identify participant
+    // Identify participant outside the lock (read-only, cheap).
     let participant;
     if (req.user!.role === 'VENDOR') {
+      // Vendors may only bid in the auction their session token is scoped to.
+      const tokenAuctionId = (req.user as any).auctionId;
+      if (tokenAuctionId && tokenAuctionId !== id) {
+        return next(new AppError('Your session is not scoped to this auction', 403, 'FORBIDDEN'));
+      }
       participant = await prisma.participant.findFirst({
         where: { auctionId: id, vendor: { email: req.user!.email } },
         include: { vendor: true },
@@ -764,117 +754,154 @@ export const submitBid = async (req: Request, res: Response, next: NextFunction)
       return next(new AppError('Your bidding access has been restricted', 403, 'BLOCKED'));
     }
 
-    // Retrieve active formula variables
-    const rule = auction.bidRuleSnapshot;
-    const rate = rule ? Number(rule.conversionRate) : 1.0;
-    const loadPercent = rule ? Number(rule.loadingPercent) : 0.0;
-    const fixedLoad = rule ? Number(rule.fixedLoading) : 0.0;
-    const minStep = rule ? Number(rule.minDecrement) : 100.0;
-    const isReverse = rule ? rule.auctionType === 'REVERSE' : true;
+    const result = await prisma.$transaction(
+      async tx => {
+        // Serialize concurrent bids per auction.
+        await tx.$queryRaw`SELECT id FROM "Auction" WHERE id = ${id} FOR UPDATE`;
 
-    // Calculate effective Total
-    const amountNum = Number(amount);
-    const effectiveTotal = (amountNum * rate) + fixedLoad + (amountNum * loadPercent / 100);
-
-    // Enforce bid decrement step vs current leading L1 bid
-    const leadingBid = await prisma.bid.findFirst({
-      where: { auctionId: id },
-      orderBy: { effectiveTotal: isReverse ? 'asc' : 'desc' },
-    });
-
-    if (leadingBid) {
-      const leadingVal = Number(leadingBid.effectiveTotal);
-      if (isReverse) {
-        // Reverse Auction: new bid must be lower than L1 by at least decrement
-        const maxAllowed = leadingVal - minStep;
-        if (effectiveTotal > maxAllowed) {
-          return next(new AppError(`Your bid does not meet the minimum required decrement. Maximum allowed effective value is ${maxAllowed}`, 400, 'INVALID_DECREMENT'));
-        }
-      } else {
-        // Forward Auction: new bid must be higher than H1 by at least increment
-        const minAllowed = leadingVal + minStep;
-        if (effectiveTotal < minAllowed) {
-          return next(new AppError(`Your bid does not meet the minimum required increment. Minimum allowed effective value is ${minAllowed}`, 400, 'INVALID_INCREMENT'));
-        }
-      }
-    }
-
-    // Check for late bid
-    if (auction.endAt && new Date() > auction.endAt) {
-      return next(new AppError('The auction closed before your bid was received.', 400, 'CLOSED'));
-    }
-
-    // Get previous hash for hash chain
-    const lastBid = await prisma.bid.findFirst({
-      where: { auctionId: id },
-      orderBy: { timestamp: 'desc' },
-    });
-    const prevHash = lastBid ? lastBid.hash : 'genesis';
-    const timestamp = new Date();
-    const hash = crypto
-      .createHash('sha256')
-      .update(`${amountNum}-${timestamp.getTime()}-${prevHash}`)
-      .digest('hex');
-
-    // Create Bid record
-    const newBid = await prisma.bid.create({
-      data: {
-        amount: amountNum,
-        conversionRate: rate,
-        loadingPercent: loadPercent,
-        fixedLoading: fixedLoad,
-        effectiveTotal: effectiveTotal,
-        timestamp,
-        auctionId: id,
-        participantId: participant.id,
-        submittedAsSurrogate: req.user!.role !== 'VENDOR',
-        hash,
-        previousHash: lastBid ? lastBid.hash : null,
-      },
-    });
-
-    // Check overtime sniper rules
-    let isExtended = false;
-    let newEnd = auction.endAt;
-
-    if (rule && rule.overtimeEnabled && auction.endAt) {
-      const remainingMs = auction.endAt.getTime() - timestamp.getTime();
-      const triggerWindowMs = rule.overtimeWindowMins * 60 * 1000;
-
-      if (remainingMs > 0 && remainingMs <= triggerWindowMs) {
-        // Extend Close time
-        newEnd = new Date(auction.endAt.getTime() + rule.overtimeExtensionMins * 60 * 1000);
-        await prisma.auction.update({
+        const auction = await tx.auction.findUnique({
           where: { id },
-          data: { endAt: newEnd, state: AuctionState.OVERTIME },
+          include: { bidRuleSnapshot: true },
         });
-        isExtended = true;
-      }
-    }
 
-    // Log to Audit Log
+        if (!auction) {
+          throw new AppError('Auction not found', 404, 'NOT_FOUND');
+        }
+        if (req.user!.role !== 'SYSTEM_ADMIN' && auction.companyId !== req.user!.companyId) {
+          throw new AppError('Auction not found', 404, 'NOT_FOUND');
+        }
+        if (auction.state !== AuctionState.LIVE && auction.state !== AuctionState.OVERTIME) {
+          throw new AppError('This auction is not currently accepting bids', 400, 'NOT_LIVE');
+        }
+        if (!auction.enabled) {
+          throw new AppError('This auction is currently paused by the administrator', 400, 'PAUSED');
+        }
+
+        const now = new Date();
+        if (auction.endAt && now > auction.endAt) {
+          throw new AppError('The auction closed before your bid was received', 400, 'CLOSED');
+        }
+
+        // All money math on Decimal, rounded half-up to 2dp — no float drift.
+        const rule = auction.bidRuleSnapshot;
+        const D = Prisma.Decimal;
+        const rate = rule ? new D(rule.conversionRate) : new D(1);
+        const loadPercent = rule ? new D(rule.loadingPercent) : new D(0);
+        const fixedLoad = rule ? new D(rule.fixedLoading) : new D(0);
+        const minStep = rule ? new D(rule.minDecrement) : new D(100);
+        const isReverse = rule ? rule.auctionType === 'REVERSE' : true;
+
+        const amountDec = new D(amount).toDecimalPlaces(2);
+        const effectiveTotal = amountDec
+          .mul(rate)
+          .add(fixedLoad)
+          .add(amountDec.mul(loadPercent).div(100))
+          .toDecimalPlaces(2);
+
+        // Enforce bid step against the current leading bid.
+        const leadingBid = await tx.bid.findFirst({
+          where: { auctionId: id },
+          orderBy: [{ effectiveTotal: isReverse ? 'asc' : 'desc' }, { timestamp: 'asc' }],
+        });
+
+        if (leadingBid) {
+          const leadingVal = new D(leadingBid.effectiveTotal);
+          if (isReverse) {
+            const maxAllowed = leadingVal.sub(minStep);
+            if (effectiveTotal.greaterThan(maxAllowed)) {
+              throw new AppError(
+                `Your bid does not meet the minimum required decrement. Maximum allowed effective value is ${maxAllowed.toFixed(2)}`,
+                400,
+                'INVALID_DECREMENT'
+              );
+            }
+          } else {
+            const minAllowed = leadingVal.add(minStep);
+            if (effectiveTotal.lessThan(minAllowed)) {
+              throw new AppError(
+                `Your bid does not meet the minimum required increment. Minimum allowed effective value is ${minAllowed.toFixed(2)}`,
+                400,
+                'INVALID_INCREMENT'
+              );
+            }
+          }
+        }
+
+        // Tamper-evident hash chain (previous bid resolved under the same lock).
+        const lastBid = await tx.bid.findFirst({
+          where: { auctionId: id },
+          orderBy: [{ timestamp: 'desc' }, { createdAt: 'desc' }],
+        });
+        const prevHash = lastBid ? lastBid.hash : 'genesis';
+        const timestamp = new Date();
+        const hash = crypto
+          .createHash('sha256')
+          .update(`${id}-${participant!.id}-${effectiveTotal.toFixed(2)}-${timestamp.getTime()}-${prevHash}`)
+          .digest('hex');
+
+        const newBid = await tx.bid.create({
+          data: {
+            amount: amountDec,
+            conversionRate: rate,
+            loadingPercent: loadPercent,
+            fixedLoading: fixedLoad,
+            effectiveTotal,
+            timestamp,
+            auctionId: id,
+            participantId: participant!.id,
+            submittedAsSurrogate: req.user!.role !== 'VENDOR',
+            hash,
+            previousHash: lastBid ? lastBid.hash : null,
+          },
+        });
+
+        // Anti-sniping overtime: extend only within the trigger window, and never
+        // beyond the configured maximum number of extensions.
+        let isExtended = false;
+        let newEnd = auction.endAt;
+        let extensionsUsed = auction.extensionCount;
+
+        if (rule && rule.overtimeEnabled && auction.endAt) {
+          const remainingMs = auction.endAt.getTime() - timestamp.getTime();
+          const triggerWindowMs = rule.overtimeWindowMins * 60 * 1000;
+          const capReached = rule.maxExtensions !== null && auction.extensionCount >= rule.maxExtensions;
+
+          if (remainingMs > 0 && remainingMs <= triggerWindowMs && !capReached) {
+            newEnd = new Date(auction.endAt.getTime() + rule.overtimeExtensionMins * 60 * 1000);
+            extensionsUsed = auction.extensionCount + 1;
+            await tx.auction.update({
+              where: { id },
+              data: { endAt: newEnd, state: AuctionState.OVERTIME, extensionCount: extensionsUsed },
+            });
+            isExtended = true;
+          }
+        }
+
+        return { newBid, isExtended, newEnd, extensionsUsed, rule, effectiveTotal };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000 }
+    );
+
+    const { newBid, isExtended, newEnd, extensionsUsed, rule } = result;
+
     await logAuditEvent(
       newBid.submittedAsSurrogate ? 'SURROGATE_BID_SUBMITTED' : 'BID_SUBMITTED',
       'Bid',
       newBid.id,
       req.user?.id,
       req.user?.role,
-      { amount: amountNum, effectiveTotal, isExtended, newEnd },
+      { auctionId: id, amount: Number(newBid.amount), effectiveTotal: Number(newBid.effectiveTotal), isExtended, newEnd },
       req.ip
     );
 
-    // Broadcast to Socket.IO room
-    const io = req.app.get('io') as Server;
+    const io = getIo(req);
     if (io) {
+      // Anonymized signal to the shared auction room. Clients re-sync their own
+      // role-scoped state over REST; competitor identities are never broadcast
+      // to vendors.
       io.to(`auction:${id}`).emit('bid.submitted', {
-        bid: {
-          id: newBid.id,
-          amount: newBid.amount,
-          effectiveTotal: newBid.effectiveTotal,
-          timestamp: newBid.timestamp,
-          vendorName: participant.vendor.name,
-          submittedAsSurrogate: newBid.submittedAsSurrogate,
-        },
+        auctionId: id,
+        timestamp: newBid.timestamp,
       });
 
       if (isExtended && newEnd) {
@@ -882,13 +909,22 @@ export const submitBid = async (req: Request, res: Response, next: NextFunction)
           auctionId: id,
           endAt: newEnd,
           extensionMins: rule!.overtimeExtensionMins,
+          extensionsUsed,
+          maxExtensions: rule!.maxExtensions,
         });
       }
     }
 
     return res.status(201).json({
       success: true,
-      data: newBid,
+      data: {
+        id: newBid.id,
+        amount: newBid.amount,
+        effectiveTotal: newBid.effectiveTotal,
+        timestamp: newBid.timestamp,
+        isExtended,
+        endAt: newEnd,
+      },
     });
   } catch (error) {
     next(error);
@@ -896,9 +932,14 @@ export const submitBid = async (req: Request, res: Response, next: NextFunction)
 };
 
 // 14. Get Live Console State (Sync leaderboard & historical lines)
+//
+// Staff receive the full leaderboard. Vendors receive only their own position,
+// their own bid history and the anonymous leading value — competitor identities
+// and competitor bid trails are never exposed to vendors.
 export const getLiveState = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const isVendor = req.user!.role === 'VENDOR';
 
     const auction = await prisma.auction.findUnique({
       where: { id },
@@ -906,18 +947,10 @@ export const getLiveState = async (req: Request, res: Response, next: NextFuncti
         bidRuleSnapshot: true,
         participants: {
           include: {
-            vendor: true,
+            vendor: { select: { id: true, name: true, email: true } },
             bids: {
-              orderBy: { timestamp: 'desc' },
+              orderBy: [{ effectiveTotal: 'asc' }, { timestamp: 'asc' }],
               take: 1,
-            },
-          },
-        },
-        bids: {
-          orderBy: { timestamp: 'desc' },
-          include: {
-            participant: {
-              include: { vendor: true },
             },
           },
         },
@@ -925,34 +958,132 @@ export const getLiveState = async (req: Request, res: Response, next: NextFuncti
     });
 
     if (!auction) {
-      return next(new AppError('Auction not found', 404));
+      return next(new AppError('Auction not found', 404, 'NOT_FOUND'));
+    }
+    if (!isVendor && req.user!.role !== 'SYSTEM_ADMIN' && auction.companyId !== req.user!.companyId) {
+      return next(new AppError('Auction not found', 404, 'NOT_FOUND'));
     }
 
-    // Format rankings table based on leading bids
-    const rankings = auction.participants.map(p => {
-      const leadingBid = p.bids[0];
+    const isReverse = auction.bidRuleSnapshot?.auctionType !== 'FORWARD';
+
+    // Build per-participant best-bid rows. Best bid = lowest effective total for
+    // reverse auctions, highest for forward. Ties resolve to the earlier bid.
+    const rows = auction.participants.map(p => {
+      const best = isReverse
+        ? p.bids[0]
+        : undefined;
+      return { participant: p, best };
+    });
+
+    // For forward auctions re-query best bids (highest) in one grouped pass.
+    let forwardBest: Record<string, { effectiveTotal: Prisma.Decimal; amount: Prisma.Decimal; timestamp: Date; submittedAsSurrogate: boolean }> = {};
+    if (!isReverse) {
+      const bids = await prisma.bid.findMany({
+        where: { auctionId: id },
+        orderBy: [{ effectiveTotal: 'desc' }, { timestamp: 'asc' }],
+      });
+      for (const b of bids) {
+        if (!forwardBest[b.participantId]) forwardBest[b.participantId] = b;
+      }
+    }
+
+    const rankings = rows.map(({ participant: p, best }) => {
+      const lead = isReverse ? best : forwardBest[p.id];
       return {
         vendorId: p.vendorId,
         vendorName: p.vendor.name,
         vendorEmail: p.vendor.email,
         blocked: p.blocked,
         acceptedTerms: p.acceptedTerms,
-        currentBid: leadingBid ? Number(leadingBid.amount) : null,
-        effectiveTotal: leadingBid ? Number(leadingBid.effectiveTotal) : null,
-        lastBidAt: leadingBid ? leadingBid.timestamp : null,
-        submittedAsSurrogate: leadingBid ? leadingBid.submittedAsSurrogate : false,
+        currentBid: lead ? Number(lead.amount) : null,
+        effectiveTotal: lead ? Number(lead.effectiveTotal) : null,
+        lastBidAt: lead ? lead.timestamp : null,
+        submittedAsSurrogate: lead ? lead.submittedAsSurrogate : false,
       };
     });
 
-    // Sort by effectiveTotal (Reverse: lower is better)
-    const isReverse = auction.bidRuleSnapshot?.auctionType === 'REVERSE';
     rankings.sort((a, b) => {
+      if (a.effectiveTotal === null && b.effectiveTotal === null) return 0;
       if (a.effectiveTotal === null) return 1;
       if (b.effectiveTotal === null) return -1;
-      return isReverse ? a.effectiveTotal - b.effectiveTotal : b.effectiveTotal - a.effectiveTotal;
+      if (a.effectiveTotal !== b.effectiveTotal) {
+        return isReverse ? a.effectiveTotal - b.effectiveTotal : b.effectiveTotal - a.effectiveTotal;
+      }
+      // Deterministic tie-break: the earlier bid wins the better rank.
+      return new Date(a.lastBidAt!).getTime() - new Date(b.lastBidAt!).getTime();
     });
 
-    const formattedBids = auction.bids.map(b => ({
+    const leadingEffectiveTotal = rankings.length > 0 ? rankings[0].effectiveTotal : null;
+
+    const base = {
+      id: auction.id,
+      title: auction.title,
+      description: auction.description,
+      state: auction.state,
+      enabled: auction.enabled,
+      startAt: auction.startAt,
+      endAt: auction.endAt,
+      baseCurrency: auction.baseCurrency,
+      extensionCount: auction.extensionCount,
+      rules: auction.bidRuleSnapshot,
+      serverNow: new Date().toISOString(),
+    };
+
+    if (isVendor) {
+      // Vendor-scoped view.
+      const tokenAuctionId = (req.user as any).auctionId;
+      if (tokenAuctionId && tokenAuctionId !== id) {
+        return next(new AppError('Your session is not scoped to this auction', 403, 'FORBIDDEN'));
+      }
+      const mine = auction.participants.find(p => p.vendor.email.toLowerCase() === req.user!.email.toLowerCase());
+      if (!mine) {
+        return next(new AppError('You are not a participant of this auction', 403, 'NOT_A_PARTICIPANT'));
+      }
+
+      const myRankIndex = rankings.findIndex(r => r.vendorId === mine.vendorId);
+      const myRow = myRankIndex >= 0 ? rankings[myRankIndex] : null;
+
+      const myBids = await prisma.bid.findMany({
+        where: { auctionId: id, participantId: mine.id },
+        orderBy: { timestamp: 'desc' },
+        take: 50,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          ...base,
+          leadingEffectiveTotal,
+          you: {
+            vendorId: mine.vendorId,
+            vendorName: mine.vendor.name,
+            blocked: mine.blocked,
+            acceptedTerms: mine.acceptedTerms,
+            rank: myRow && myRow.effectiveTotal !== null ? myRankIndex + 1 : null,
+            currentBid: myRow ? myRow.currentBid : null,
+            effectiveTotal: myRow ? myRow.effectiveTotal : null,
+          },
+          myBids: myBids.map(b => ({
+            id: b.id,
+            amount: Number(b.amount),
+            effectiveTotal: Number(b.effectiveTotal),
+            timestamp: b.timestamp,
+          })),
+        },
+      });
+    }
+
+    // Staff view: full leaderboard + chronological history.
+    const bids = await prisma.bid.findMany({
+      where: { auctionId: id },
+      orderBy: { timestamp: 'desc' },
+      take: 300,
+      include: {
+        participant: { include: { vendor: { select: { name: true } } } },
+      },
+    });
+
+    const formattedBids = bids.map(b => ({
       id: b.id,
       amount: Number(b.amount),
       effectiveTotal: Number(b.effectiveTotal),
@@ -964,13 +1095,7 @@ export const getLiveState = async (req: Request, res: Response, next: NextFuncti
     return res.status(200).json({
       success: true,
       data: {
-        id: auction.id,
-        title: auction.title,
-        state: auction.state,
-        enabled: auction.enabled,
-        startAt: auction.startAt,
-        endAt: auction.endAt,
-        rules: auction.bidRuleSnapshot,
+        ...base,
         rankings,
         bidHistory: formattedBids,
       },
@@ -986,37 +1111,31 @@ export const extendAuction = async (req: Request, res: Response, next: NextFunct
     const { id } = req.params;
     const { durationMinutes } = req.body;
 
-    if (!durationMinutes || Number(durationMinutes) <= 0) {
-      return next(new AppError('A valid positive extension duration is required', 400));
-    }
-
     const auction = await prisma.auction.findUnique({ where: { id } });
+    assertCompanyScope(req, auction);
 
-    if (!auction || !auction.endAt) {
-      return next(new AppError('Auction close time not found', 404));
+    if (!auction!.endAt) {
+      return next(new AppError('Auction close time not found', 400));
+    }
+    if (auction!.state !== AuctionState.LIVE && auction!.state !== AuctionState.OVERTIME) {
+      return next(new AppError('Only a live auction can be extended', 400, 'NOT_LIVE'));
     }
 
-    const newEnd = new Date(auction.endAt.getTime() + Number(durationMinutes) * 60 * 1000);
+    const newEnd = new Date(auction!.endAt.getTime() + Number(durationMinutes) * 60 * 1000);
     const updated = await prisma.auction.update({
       where: { id },
       data: { endAt: newEnd, state: AuctionState.OVERTIME },
     });
 
-    await logAuditEvent(
-      'MANUAL_EXTEND',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role,
-      { durationMinutes, newEnd }
-    );
+    await logAuditEvent('MANUAL_EXTEND', 'Auction', id, req.user?.id, req.user?.role, { durationMinutes, newEnd });
 
-    const io = req.app.get('io') as Server;
+    const io = getIo(req);
     if (io) {
       io.to(`auction:${id}`).emit('auction.extended', {
         auctionId: id,
         endAt: newEnd,
         extensionMins: durationMinutes,
+        manual: true,
       });
     }
 
@@ -1035,9 +1154,10 @@ export const stopAuction = async (req: Request, res: Response, next: NextFunctio
     const { id } = req.params;
 
     const auction = await prisma.auction.findUnique({ where: { id } });
+    assertCompanyScope(req, auction);
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
+    if (auction!.state === AuctionState.COMPLETED || auction!.state === AuctionState.CANCELLED) {
+      return next(new AppError('This auction has already ended', 400));
     }
 
     const updated = await prisma.auction.update({
@@ -1045,15 +1165,9 @@ export const stopAuction = async (req: Request, res: Response, next: NextFunctio
       data: { state: AuctionState.COMPLETED, enabled: false },
     });
 
-    await logAuditEvent(
-      'MANUAL_STOP',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role
-    );
+    await logAuditEvent('MANUAL_STOP', 'Auction', id, req.user?.id, req.user?.role);
 
-    const io = req.app.get('io') as Server;
+    const io = getIo(req);
     if (io) {
       io.to(`auction:${id}`).emit('auction.closed', {
         auctionId: id,
@@ -1076,28 +1190,20 @@ export const pauseAuction = async (req: Request, res: Response, next: NextFuncti
     const { id } = req.params;
 
     const auction = await prisma.auction.findUnique({ where: { id } });
-
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
-    }
+    assertCompanyScope(req, auction);
 
     const updated = await prisma.auction.update({
       where: { id },
       data: { enabled: false },
     });
 
-    await logAuditEvent(
-      'MANUAL_PAUSE',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role
-    );
+    await logAuditEvent('MANUAL_PAUSE', 'Auction', id, req.user?.id, req.user?.role);
 
-    const io = req.app.get('io') as Server;
+    const io = getIo(req);
     if (io) {
       io.to(`auction:${id}`).emit('auction.state.changed', {
         auctionId: id,
+        state: updated.state,
         enabled: false,
       });
     }
@@ -1117,9 +1223,10 @@ export const resumeAuction = async (req: Request, res: Response, next: NextFunct
     const { id } = req.params;
 
     const auction = await prisma.auction.findUnique({ where: { id } });
+    assertCompanyScope(req, auction);
 
-    if (!auction) {
-      return next(new AppError('Auction not found', 404));
+    if (auction!.state === AuctionState.COMPLETED || auction!.state === AuctionState.CANCELLED) {
+      return next(new AppError('An ended auction cannot be resumed', 400));
     }
 
     const updated = await prisma.auction.update({
@@ -1127,18 +1234,13 @@ export const resumeAuction = async (req: Request, res: Response, next: NextFunct
       data: { enabled: true },
     });
 
-    await logAuditEvent(
-      'MANUAL_RESUME',
-      'Auction',
-      id,
-      req.user?.id,
-      req.user?.role
-    );
+    await logAuditEvent('MANUAL_RESUME', 'Auction', id, req.user?.id, req.user?.role);
 
-    const io = req.app.get('io') as Server;
+    const io = getIo(req);
     if (io) {
       io.to(`auction:${id}`).emit('auction.state.changed', {
         auctionId: id,
+        state: updated.state,
         enabled: true,
       });
     }
@@ -1157,6 +1259,9 @@ export const blockVendor = async (req: Request, res: Response, next: NextFunctio
   try {
     const { id, vendorId } = req.params;
 
+    const auction = await prisma.auction.findUnique({ where: { id } });
+    assertCompanyScope(req, auction);
+
     const participant = await prisma.participant.findFirst({
       where: { auctionId: id, vendorId },
       include: { vendor: true },
@@ -1171,18 +1276,13 @@ export const blockVendor = async (req: Request, res: Response, next: NextFunctio
       data: { blocked: true },
     });
 
-    await logAuditEvent(
-      'VENDOR_BLOCKED',
-      'AuctionParticipant',
-      participant.id,
-      req.user?.id,
-      req.user?.role,
-      { vendorName: participant.vendor.name }
-    );
+    await logAuditEvent('VENDOR_BLOCKED', 'AuctionParticipant', participant.id, req.user?.id, req.user?.role, {
+      vendorName: participant.vendor.name,
+    });
 
-    const io = req.app.get('io') as Server;
+    const io = getIo(req);
     if (io) {
-      io.to(`auction:${id}:vendor:${vendorId}`).emit('participant.blocked', {
+      io.to(`auction:${id}:vendor:${participant.vendor.id}`).emit('participant.blocked', {
         auctionId: id,
         vendorId,
         blocked: true,
@@ -1204,6 +1304,9 @@ export const unblockVendor = async (req: Request, res: Response, next: NextFunct
   try {
     const { id, vendorId } = req.params;
 
+    const auction = await prisma.auction.findUnique({ where: { id } });
+    assertCompanyScope(req, auction);
+
     const participant = await prisma.participant.findFirst({
       where: { auctionId: id, vendorId },
       include: { vendor: true },
@@ -1218,18 +1321,13 @@ export const unblockVendor = async (req: Request, res: Response, next: NextFunct
       data: { blocked: false },
     });
 
-    await logAuditEvent(
-      'VENDOR_UNBLOCKED',
-      'AuctionParticipant',
-      participant.id,
-      req.user?.id,
-      req.user?.role,
-      { vendorName: participant.vendor.name }
-    );
+    await logAuditEvent('VENDOR_UNBLOCKED', 'AuctionParticipant', participant.id, req.user?.id, req.user?.role, {
+      vendorName: participant.vendor.name,
+    });
 
-    const io = req.app.get('io') as Server;
+    const io = getIo(req);
     if (io) {
-      io.to(`auction:${id}:vendor:${vendorId}`).emit('participant.blocked', {
+      io.to(`auction:${id}:vendor:${participant.vendor.id}`).emit('participant.blocked', {
         auctionId: id,
         vendorId,
         blocked: false,
@@ -1250,7 +1348,6 @@ export const unblockVendor = async (req: Request, res: Response, next: NextFunct
 export const acceptTerms = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const { ipAddress } = req.body;
 
     const participant = await prisma.participant.findFirst({
       where: {
@@ -1263,20 +1360,30 @@ export const acceptTerms = async (req: Request, res: Response, next: NextFunctio
     if (!participant) {
       return next(new AppError('Vendor participant record not found', 404));
     }
+    if (participant.blocked) {
+      return next(new AppError('Your access to this auction has been restricted', 403, 'BLOCKED'));
+    }
 
-    // Update terms acceptance status
+    // Idempotent: re-accepting must not duplicate acceptance records.
+    if (participant.acceptedTerms) {
+      return res.status(200).json({
+        success: true,
+        message: 'Compliance terms already accepted',
+      });
+    }
+
     await prisma.participant.update({
       where: { id: participant.id },
       data: { acceptedTerms: true },
     });
 
-    // Create VendorAcceptance records for the active template versions
+    // Record acceptance against the latest version of each template type.
+    // The client-reported IP is never trusted; only the connection IP is stored.
     const docs = await prisma.documentTemplate.findMany({
       orderBy: { version: 'desc' },
     });
-    
-    // De-duplicate by type (take the latest version)
-    const latestDocs: any = {};
+
+    const latestDocs: Record<string, (typeof docs)[number]> = {};
     for (const doc of docs) {
       if (!latestDocs[doc.type]) {
         latestDocs[doc.type] = doc;
@@ -1290,7 +1397,7 @@ export const acceptTerms = async (req: Request, res: Response, next: NextFunctio
           vendorId: participant.vendorId,
           auctionId: id,
           documentId: doc.id,
-          ipAddress: ipAddress || req.ip || '127.0.0.1',
+          ipAddress: req.ip || null,
         },
       });
     }
@@ -1302,7 +1409,7 @@ export const acceptTerms = async (req: Request, res: Response, next: NextFunctio
       req.user?.id,
       req.user?.role,
       { vendorName: participant.vendor.name },
-      ipAddress || req.ip
+      req.ip
     );
 
     return res.status(200).json({
@@ -1314,3 +1421,40 @@ export const acceptTerms = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
+// 22. Vendor Action: Read Compliance Documents for gateway display
+export const getAuctionTerms = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+
+    if (req.user!.role === 'VENDOR') {
+      const participant = await prisma.participant.findFirst({
+        where: { auctionId: id, vendor: { email: req.user!.email } },
+        select: { id: true },
+      });
+      if (!participant) {
+        return next(new AppError('You are not a participant of this auction', 403, 'NOT_A_PARTICIPANT'));
+      }
+    } else {
+      const auction = await prisma.auction.findUnique({ where: { id }, select: { companyId: true } });
+      assertCompanyScope(req, auction as any);
+    }
+
+    const docs = await prisma.documentTemplate.findMany({
+      orderBy: { version: 'desc' },
+    });
+
+    const latest: Record<string, { id: string; type: string; version: number; content: string }> = {};
+    for (const doc of docs) {
+      if (!latest[doc.type]) {
+        latest[doc.type] = { id: doc.id, type: doc.type, version: doc.version, content: doc.content };
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: Object.values(latest),
+    });
+  } catch (error) {
+    next(error);
+  }
+};

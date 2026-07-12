@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../providers/AuthProvider';
-import { 
-  Play, Edit, Eye, ShieldAlert, 
-  FileText, ShieldCheck, HelpCircle, XCircle, Clock, AlertTriangle, CheckCircle2, X
+import {
+  Play, Edit, ShieldAlert,
+  FileText, ShieldCheck, XCircle, Clock, AlertTriangle, CheckCircle2, X
 } from 'lucide-react';
 import { getAuctionDisplayId } from '../utils/auctionHelper';
+import { formatDateTime, currencySymbol } from '../utils/format';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -68,9 +69,8 @@ const AuctionDetail: React.FC = () => {
     try {
       const res = await axios.get(`${API_URL}/auctions/${id}`);
       setAuction(res.data.data);
-    } catch (err) {
-      console.error('Failed to load details:', err);
-      showToast('Failed to load auction details', 'error');
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || 'Failed to load auction details', 'error');
     } finally {
       setLoading(false);
     }
@@ -86,9 +86,8 @@ const AuctionDetail: React.FC = () => {
       await axios.post(`${API_URL}/auctions/${id}/approve`);
       showToast('Auction approved successfully!');
       fetchDetails();
-    } catch (err) {
-      console.error('Approval failed:', err);
-      showToast('Failed to approve auction', 'error');
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || 'Failed to approve auction', 'error');
     } finally {
       setActing(false);
     }
@@ -104,9 +103,8 @@ const AuctionDetail: React.FC = () => {
       await axios.post(`${API_URL}/auctions/${id}/reject`, { comment });
       showToast('Auction rejected and returned to draft');
       fetchDetails();
-    } catch (err) {
-      console.error('Rejection failed:', err);
-      showToast('Failed to reject auction', 'error');
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || 'Failed to reject auction', 'error');
     } finally {
       setActing(false);
     }
@@ -120,9 +118,8 @@ const AuctionDetail: React.FC = () => {
       const res = await axios.get(`${API_URL}/auctions/${id}/validate-publish`);
       setChecklist(res.data.checklist);
       setAllPassed(res.data.allPassed);
-    } catch (err) {
-      console.error('Checklist check failed:', err);
-      showToast('Validation checks failed', 'error');
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || 'Validation checks failed', 'error');
     } finally {
       setValidating(false);
     }
@@ -132,12 +129,11 @@ const AuctionDetail: React.FC = () => {
     setActing(true);
     try {
       await axios.post(`${API_URL}/auctions/${id}/publish`);
-      showToast('Auction published successfully! Invites sent.');
+      showToast('Auction published successfully! Vendor credentials generated.');
       setShowPublishModal(false);
       fetchDetails();
-    } catch (err) {
-      console.error('Publishing failed:', err);
-      showToast('Failed to publish auction', 'error');
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || 'Failed to publish auction', 'error');
     } finally {
       setActing(false);
     }
@@ -190,12 +186,12 @@ const AuctionDetail: React.FC = () => {
                 ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
                 : auction.state === 'APPROVED'
                 ? 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20'
-                : 'bg-neutral-500/10 text-neutral-600 border-neutral-350/20'
+                : 'bg-neutral-500/10 text-neutral-600 border-neutral-300/20'
             }`}>
               {auction.state}
             </span>
-            <span className="text-xs font-mono text-neutral-400">ID: {getAuctionDisplayId(auction.id, auction.title).id}</span>
-            <span className="text-xs font-mono text-neutral-400">| Ref: {getAuctionDisplayId(auction.id, auction.title).ref}</span>
+            <span className="text-xs font-mono text-neutral-400">ID: {getAuctionDisplayId(auction.id).id}</span>
+            <span className="text-xs font-mono text-neutral-400">| Ref: {getAuctionDisplayId(auction.id).ref}</span>
             <span className="text-[10px] text-zinc-400 flex items-center gap-1 pl-1">
               <Clock size={11} />
               {getRelativeTimeString(auction.updatedAt)}
@@ -218,7 +214,7 @@ const AuctionDetail: React.FC = () => {
           {auction.state === 'APPROVED' && (
             <button 
               onClick={handleValidatePublish}
-              className="flex items-center gap-1.5 bg-indigo-650 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3.5 rounded-xl shadow transition cursor-pointer"
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3.5 rounded-xl shadow transition cursor-pointer"
             >
               <ShieldCheck size={13} />
               Run Publish Validation
@@ -269,15 +265,15 @@ const AuctionDetail: React.FC = () => {
         {activeTab === 'overview' && (
           <div className="grid grid-cols-2 gap-6 leading-relaxed">
             <div className="space-y-0.5">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Start Schedule</span>
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Start Schedule (your local time)</span>
               <p className="font-semibold text-neutral-800 dark:text-neutral-200">
-                {auction.startAt ? new Date(auction.startAt).toLocaleString() : 'Not scheduled'}
+                {auction.startAt ? formatDateTime(auction.startAt) : 'Not scheduled'}
               </p>
             </div>
             <div className="space-y-0.5">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">End Schedule</span>
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">End Schedule (your local time)</span>
               <p className="font-semibold text-neutral-800 dark:text-neutral-200">
-                {auction.endAt ? new Date(auction.endAt).toLocaleString() : 'Not scheduled'}
+                {auction.endAt ? formatDateTime(auction.endAt) : 'Not scheduled'}
               </p>
             </div>
             <div className="col-span-2 space-y-0.5 border-t border-neutral-100 dark:border-slate-800 pt-3">
@@ -294,12 +290,18 @@ const AuctionDetail: React.FC = () => {
               <p className="font-semibold text-neutral-800 dark:text-neutral-200">{Number(auction.bidRuleSnapshot?.conversionRate || 1)}</p>
             </div>
             <div className="space-y-0.5">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase">Min Step Size (Decrement)</span>
-              <p className="font-semibold text-neutral-800 dark:text-neutral-200">₹{Number(getAuctionDisplayId(auction.id, auction.title).decrement).toLocaleString()}</p>
+              <span className="text-[10px] font-bold text-neutral-400 uppercase">
+                {auction.bidRuleSnapshot?.auctionType === 'FORWARD' ? 'Min Step Size (Increment)' : 'Min Step Size (Decrement)'}
+              </span>
+              <p className="font-semibold text-neutral-800 dark:text-neutral-200">
+                {auction.bidRuleSnapshot?.minDecrement != null
+                  ? `${currencySymbol(auction.baseCurrency)}${Number(auction.bidRuleSnapshot.minDecrement).toLocaleString()}`
+                  : '—'}
+              </p>
             </div>
             <div className="space-y-0.5">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase">Base Price</span>
-              <p className="font-semibold text-neutral-800 dark:text-neutral-200">₹{Number(getAuctionDisplayId(auction.id, auction.title).basePrice).toLocaleString()}</p>
+              <span className="text-[10px] font-bold text-neutral-400 uppercase">Auction Type</span>
+              <p className="font-semibold text-neutral-800 dark:text-neutral-200">{auction.bidRuleSnapshot?.auctionType || 'REVERSE'}</p>
             </div>
             <div className="space-y-0.5">
               <span className="text-[10px] font-bold text-neutral-400 uppercase">Overtime Enabled</span>
@@ -326,7 +328,7 @@ const AuctionDetail: React.FC = () => {
                       <p className="text-[10px] text-neutral-500 font-mono mt-0.5">{p.vendor.email}</p>
                     </div>
                     <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
-                      p.blocked ? 'bg-red-100 text-red-650' : 'bg-green-100 text-green-750'
+                      p.blocked ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-700'
                     }`}>
                       {p.blocked ? 'Blocked' : 'Active'}
                     </span>
@@ -379,7 +381,7 @@ const AuctionDetail: React.FC = () => {
                       message: 'Are you sure you want to reject this auction draft and request revision comments?'
                     })}
                     disabled={acting}
-                    className="bg-red-650 hover:bg-red-750 text-white font-semibold py-2 px-4 rounded-xl text-xs cursor-pointer"
+                    className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-xl text-xs cursor-pointer"
                   >
                     {acting ? 'Processing...' : 'Reject Draft'}
                   </button>
@@ -398,7 +400,7 @@ const AuctionDetail: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-xl space-y-6">
             <div className="flex justify-between items-center border-b pb-2">
               <h3 className="font-bold text-neutral-900 dark:text-white">Publish Validation Checklist</h3>
-              <button onClick={() => setShowPublishModal(false)} className="text-neutral-400 hover:text-neutral-650 cursor-pointer">
+              <button onClick={() => setShowPublishModal(false)} className="text-neutral-400 hover:text-neutral-600 cursor-pointer">
                 <XCircle size={18} />
               </button>
             </div>
@@ -409,13 +411,13 @@ const AuctionDetail: React.FC = () => {
               ) : (
                 checklist.map((item, idx) => (
                   <div key={idx} className="flex items-start gap-2.5 text-xs">
-                    <span className={`h-4.5 w-4.5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                      item.passed ? 'bg-green-100 text-green-600' : 'bg-red-105 text-red-500'
+                    <span className={`h-4 w-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                      item.passed ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-500'
                     }`}>
                       {item.passed ? '✓' : '✗'}
                     </span>
                     <div>
-                      <p className="font-semibold text-neutral-850 dark:text-neutral-200">{item.name}</p>
+                      <p className="font-semibold text-neutral-800 dark:text-neutral-200">{item.name}</p>
                       <p className="text-[10px] text-neutral-500">{item.message}</p>
                     </div>
                   </div>
@@ -426,7 +428,7 @@ const AuctionDetail: React.FC = () => {
             <div className="flex justify-end gap-2 pt-2 border-t">
               <button 
                 onClick={() => setShowPublishModal(false)} 
-                className="px-4 py-2 border border-neutral-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-neutral-700 dark:text-slate-350 cursor-pointer"
+                className="px-4 py-2 border border-neutral-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-neutral-700 dark:text-slate-300 cursor-pointer"
               >
                 Close
               </button>
@@ -437,7 +439,7 @@ const AuctionDetail: React.FC = () => {
                   title: 'Publish Auction Gateway',
                   message: 'Are you sure you want to publish this auction? This will trigger live countdown schedules and send vendor email invites.'
                 })}
-                className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold disabled:opacity-50 cursor-pointer"
               >
                 {acting ? 'Publishing...' : 'Publish Auction'}
               </button>
@@ -463,7 +465,7 @@ const AuctionDetail: React.FC = () => {
             <div className="flex gap-2.5 justify-end pt-2">
               <button
                 onClick={() => setConfirmAction(null)}
-                className="px-4 py-2 border border-neutral-250 dark:border-slate-800 rounded-xl text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-slate-800 text-neutral-600 dark:text-slate-350 cursor-pointer"
+                className="px-4 py-2 border border-neutral-200 dark:border-slate-800 rounded-xl text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-slate-800 text-neutral-600 dark:text-slate-300 cursor-pointer"
               >
                 Cancel
               </button>

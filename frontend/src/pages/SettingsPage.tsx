@@ -1,15 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { 
-  Settings, Users, ShieldAlert, FileText, 
-  Mail, Save, Plus, HelpCircle 
+import {
+  Settings, Users, ShieldAlert, FileText,
+  Mail, Save, AlertTriangle, CheckCircle2, X
 } from 'lucide-react';
+import { formatDate } from '../utils/format';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
 const SettingsPage: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'company' | 'vendors' | 'templates' | 'smtp'>('users');
-  const [loading, setLoading] = useState(false);
+
+  // Toasts
+  const [toasts, setToasts] = useState<{ id: number; message: string; type: 'success' | 'error' }[]>([]);
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    const toastId = Date.now();
+    setToasts(prev => [...prev, { id: toastId, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== toastId));
+    }, 4000);
+  };
+  const apiError = (err: any, fallback: string) => err.response?.data?.error?.message || fallback;
 
   // Users lists
   const [users, setUsers] = useState<any[]>([]);
@@ -27,35 +38,35 @@ const SettingsPage: React.FC = () => {
   const [newTemplate, setNewTemplate] = useState({ type: 'TERMS', content: '' });
 
   // SMTP diagnostics parameters
-  const [smtp, setSmtp] = useState({ host: 'smtp.blackboxlimited.com', port: '587', username: '', password: '' });
+  const [smtp, setSmtp] = useState({ host: '', port: '587', username: '', password: '' });
   const [smtpStatus, setSmtpStatus] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     try {
       const res = await axios.get(`${API_URL}/settings/users`);
       setUsers(res.data.data);
-    } catch (err) { console.error(err); }
+    } catch (err: any) { showToast(apiError(err, 'Failed to load users'), 'error'); }
   };
 
   const fetchCompany = async () => {
     try {
       const res = await axios.get(`${API_URL}/settings/company`);
       setCompany(res.data.data);
-    } catch (err) { console.error(err); }
+    } catch (err: any) { showToast(apiError(err, 'Failed to load company profile'), 'error'); }
   };
 
   const fetchVendors = async () => {
     try {
       const res = await axios.get(`${API_URL}/settings/vendors`);
       setVendors(res.data.data);
-    } catch (err) { console.error(err); }
+    } catch (err: any) { showToast(apiError(err, 'Failed to load vendors'), 'error'); }
   };
 
   const fetchTemplates = async () => {
     try {
       const res = await axios.get(`${API_URL}/settings/templates`);
       setTemplates(res.data.data);
-    } catch (err) { console.error(err); }
+    } catch (err: any) { showToast(apiError(err, 'Failed to load templates'), 'error'); }
   };
 
   useEffect(() => {
@@ -63,53 +74,66 @@ const SettingsPage: React.FC = () => {
     if (activeSubTab === 'company') fetchCompany();
     if (activeSubTab === 'vendors') fetchVendors();
     if (activeSubTab === 'templates') fetchTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSubTab]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (newUser.password.length < 8) {
+      showToast('Password must be at least 8 characters.', 'error');
+      return;
+    }
     try {
       await axios.post(`${API_URL}/settings/users`, newUser);
-      alert('User added successfully!');
+      showToast('User added successfully!');
       setNewUser({ email: '', password: '', role: 'AUCTION_OWNER' });
       fetchUsers();
-    } catch (err) { alert('Failed to invite user'); }
+    } catch (err: any) { showToast(apiError(err, 'Failed to invite user'), 'error'); }
   };
 
   const handleUpdateCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.patch(`${API_URL}/settings/company`, company);
-      alert('Company default settings updated!');
-    } catch (err) { alert('Failed to update company'); }
+      await axios.patch(`${API_URL}/settings/company`, {
+        name: company?.name,
+        primaryColor: company?.primaryColor || null,
+        accentColor: company?.accentColor || null,
+      });
+      showToast('Company default settings updated!');
+    } catch (err: any) { showToast(apiError(err, 'Failed to update company'), 'error'); }
   };
 
   const handleAddVendor = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await axios.post(`${API_URL}/settings/vendors`, newVendor);
-      alert('Vendor successfully added to Master directory!');
+      showToast('Vendor successfully added to the master directory!');
       setNewVendor({ name: '', email: '' });
       fetchVendors();
-    } catch (err) { alert('Failed to add vendor'); }
+    } catch (err: any) { showToast(apiError(err, 'Failed to add vendor'), 'error'); }
   };
 
   const handleAddTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await axios.post(`${API_URL}/settings/templates`, newTemplate);
-      alert('Compliance template version saved successfully!');
+      showToast('Compliance template version saved successfully!');
       setNewTemplate({ type: 'TERMS', content: '' });
       fetchTemplates();
-    } catch (err) { alert('Failed to save template'); }
+    } catch (err: any) { showToast(apiError(err, 'Failed to save template'), 'error'); }
   };
 
   const handleTestSMTP = async () => {
-    setSmtpStatus('Running SMTP diagnosis...');
+    if (!smtp.host) {
+      setSmtpStatus('Enter an SMTP host first.');
+      return;
+    }
+    setSmtpStatus('Testing connectivity...');
     try {
-      const res = await axios.post(`${API_URL}/settings/smtp/test`, smtp);
+      const res = await axios.post(`${API_URL}/settings/smtp/test`, { host: smtp.host, port: smtp.port });
       setSmtpStatus(res.data.message);
-    } catch (err) {
-      setSmtpStatus('SMTP diagnostics check failed.');
+    } catch (err: any) {
+      setSmtpStatus(apiError(err, 'SMTP connectivity check failed.'));
     }
   };
 
@@ -118,7 +142,7 @@ const SettingsPage: React.FC = () => {
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-white flex items-center gap-2 font-sans">
-          <Settings size={20} className="text-indigo-650" />
+          <Settings size={20} className="text-indigo-600" />
           Settings Portal
         </h1>
         <p className="text-xs text-neutral-500 mt-1">
@@ -142,7 +166,7 @@ const SettingsPage: React.FC = () => {
               onClick={() => setActiveSubTab(tab.id as any)}
               className={`pb-2.5 px-1 flex items-center gap-1.5 transition border-b-2 ${
                 activeSubTab === tab.id
-                  ? 'border-b-2 border-indigo-650 text-indigo-655 font-bold'
+                  ? 'border-b-2 border-indigo-600 text-indigo-600 font-bold'
                   : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-white'
               }`}
             >
@@ -177,7 +201,8 @@ const SettingsPage: React.FC = () => {
                   type="password"
                   value={newUser.password}
                   onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))}
-                  placeholder="Enter initial password..."
+                  placeholder="Initial password (min 8 chars)..."
+                  minLength={8}
                   className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
                   required
                 />
@@ -206,10 +231,10 @@ const SettingsPage: React.FC = () => {
               {users.map((u) => (
                 <div key={u.id} className="p-3.5 flex justify-between items-center hover:bg-slate-50/50">
                   <div>
-                    <p className="font-semibold text-neutral-850 dark:text-neutral-200">{u.email}</p>
+                    <p className="font-semibold text-neutral-800 dark:text-neutral-200">{u.email}</p>
                     <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mt-0.5">{u.role}</p>
                   </div>
-                  <span className="text-[10px] text-neutral-500">Joined: {new Date(u.createdAt).toLocaleDateString()}</span>
+                  <span className="text-[10px] text-neutral-500">Joined: {formatDate(u.createdAt)}</span>
                 </div>
               ))}
             </div>
@@ -239,9 +264,9 @@ const SettingsPage: React.FC = () => {
             </div>
             <button
               type="submit"
-              className="bg-indigo-650 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-xl flex items-center gap-1.5"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-xl flex items-center gap-1.5 cursor-pointer"
             >
-              <Save size={13} />
+              <Save size={13} aria-hidden="true" />
               Save Preferences
             </button>
           </form>
@@ -285,7 +310,7 @@ const SettingsPage: React.FC = () => {
               {vendors.map((v) => (
                 <div key={v.id} className="p-3.5 flex justify-between items-center hover:bg-slate-50/50">
                   <div>
-                    <p className="font-semibold text-neutral-850 dark:text-neutral-200">{v.name}</p>
+                    <p className="font-semibold text-neutral-800 dark:text-neutral-200">{v.name}</p>
                     <p className="text-[10px] text-neutral-500 font-mono mt-0.5">{v.email}</p>
                   </div>
                   <span className="text-[10px] text-neutral-500">Master database index</span>
@@ -336,10 +361,10 @@ const SettingsPage: React.FC = () => {
               {templates.map((t) => (
                 <div key={t.id} className="p-3.5 flex justify-between items-center hover:bg-slate-50/50">
                   <div>
-                    <p className="font-semibold text-neutral-850 dark:text-neutral-200">{t.type} Template</p>
+                    <p className="font-semibold text-neutral-800 dark:text-neutral-200">{t.type} Template</p>
                     <p className="text-[10px] text-neutral-500 font-bold uppercase mt-0.5">Version tag: v{t.version}</p>
                   </div>
-                  <span className="text-[10px] text-neutral-450 italic font-mono truncate max-w-xs">{t.content}</span>
+                  <span className="text-[10px] text-neutral-400 italic font-mono truncate max-w-xs">{t.content}</span>
                 </div>
               ))}
             </div>
@@ -350,18 +375,23 @@ const SettingsPage: React.FC = () => {
         {activeSubTab === 'smtp' && (
           <div className="space-y-4 max-w-md">
             <div>
-              <label className="block text-[10px] font-bold text-neutral-500 mb-1.5">SMTP Host Server</label>
+              <label htmlFor="smtp-host" className="block text-[10px] font-bold text-neutral-500 mb-1.5">SMTP Host Server</label>
               <input
+                id="smtp-host"
                 type="text"
                 value={smtp.host}
+                placeholder="e.g. smtp.yourcompany.com"
                 onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
                 className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-neutral-500 mb-1.5">SMTP Port</label>
+              <label htmlFor="smtp-port" className="block text-[10px] font-bold text-neutral-500 mb-1.5">SMTP Port</label>
               <input
-                type="text"
+                id="smtp-port"
+                type="number"
+                min="1"
+                max="65535"
                 value={smtp.port}
                 onChange={(e) => setSmtp({ ...smtp, port: e.target.value })}
                 className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
@@ -369,19 +399,46 @@ const SettingsPage: React.FC = () => {
             </div>
             <button
               onClick={handleTestSMTP}
-              className="bg-indigo-650 hover:bg-indigo-750 text-white font-semibold py-2 px-4 rounded-xl"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-xl cursor-pointer"
             >
-              Test Connection SMTP diagnostics
+              Test SMTP Connectivity
             </button>
 
             {smtpStatus && (
-              <div className="p-4 bg-slate-50 dark:bg-slate-950/60 rounded-xl border text-[11px] leading-relaxed text-indigo-600 font-mono">
+              <div className="p-4 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-neutral-200 dark:border-slate-800 text-[11px] leading-relaxed text-indigo-600 font-mono" role="status">
                 {smtpStatus}
               </div>
             )}
           </div>
         )}
 
+      </div>
+
+      {/* Toasts */}
+      <div className="fixed top-6 right-6 z-50 flex flex-col gap-2.5 max-w-sm pointer-events-none" aria-live="polite">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            role="alert"
+            className={`pointer-events-auto p-4 rounded-xl border shadow-xl flex items-center justify-between gap-3 transition-all duration-300 ${
+              toast.type === 'error'
+                ? 'bg-red-500/10 border-red-500/25 text-red-500'
+                : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-500'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {toast.type === 'error' ? <AlertTriangle size={16} aria-hidden="true" /> : <CheckCircle2 size={16} aria-hidden="true" />}
+              <span className="text-xs font-semibold leading-relaxed">{toast.message}</span>
+            </div>
+            <button
+              onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+              aria-label="Dismiss notification"
+              className="text-neutral-400 hover:text-neutral-600 dark:hover:text-white transition cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );

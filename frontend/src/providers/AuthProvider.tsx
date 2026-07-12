@@ -20,8 +20,8 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, password: String) => Promise<void>;
-  vendorLogin: (email: string, otp: string, auctionId?: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  vendorLogin: (email: string, password: string, auctionId?: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -49,7 +49,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // Verify/Fetch current user details
           const res = await axios.get(`${API_URL}/auth/me`);
           setUser(res.data.data);
-        } catch (error) {
+        } catch {
           // If expired, try refreshing (only if refreshToken exists, which vendors do not have)
           if (storedRefreshToken) {
             try {
@@ -63,7 +63,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               
               const meRes = await axios.get(`${API_URL}/auth/me`);
               setUser(meRes.data.data);
-            } catch (refreshErr) {
+            } catch {
               removeActiveToken();
               localStorage.removeItem('refreshToken');
             }
@@ -78,38 +78,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     initializeAuth();
   }, []);
 
-  const login = async (email: string, password: String) => {
+  const login = async (email: string, password: string) => {
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}/auth/login`, { email, password });
       const { accessToken, refreshToken, user: loggedUser } = res.data.data;
-      
+
       setActiveToken(accessToken);
       localStorage.setItem('refreshToken', refreshToken);
       setToken(accessToken);
       setUser(loggedUser);
       axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
-    } catch (error) {
-      throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  const vendorLogin = async (email: string, otp: string, auctionId?: string) => {
+  const vendorLogin = async (email: string, password: string, auctionId?: string) => {
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/auth/vendor-login`, { email, password: otp, auctionId });
+      const res = await axios.post(`${API_URL}/auth/vendor-login`, { email, password, auctionId });
       const { accessToken, user: loggedUser } = res.data.data;
-      
+
       setActiveToken(accessToken, auctionId);
       // For transient vendor sessions, clear refresh token
       localStorage.removeItem('refreshToken');
       setToken(accessToken);
       setUser(loggedUser);
       axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
-    } catch (error) {
-      throw error;
     } finally {
       setLoading(false);
     }

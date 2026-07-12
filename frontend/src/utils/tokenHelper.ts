@@ -34,8 +34,8 @@ export const setActiveToken = (token: string, auctionId?: string) => {
         localStorage.setItem(`token_${payload.auctionId}`, token);
         return;
       }
-    } catch (e) {
-      // Ignore
+    } catch {
+      // Malformed token payload: fall through to the default storage key.
     }
     localStorage.setItem('token', token);
   }

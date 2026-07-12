@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { 
-  ArrowLeft, Printer, Users, BarChart3, 
-  History, Calendar, Info 
+import {
+  ArrowLeft, Printer, Users, BarChart3,
+  History
 } from 'lucide-react';
+import { formatDateTime, currencySymbol } from '../utils/format';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -20,8 +21,8 @@ const ReportsDetail: React.FC = () => {
       try {
         const res = await axios.get(`${API_URL}/reports/auctions/${id}`);
         setReport(res.data.data);
-      } catch (err) {
-        console.error('Failed to load report bundle:', err);
+      } catch {
+        // Handled by the error state below.
       } finally {
         setLoading(false);
       }
@@ -42,6 +43,7 @@ const ReportsDetail: React.FC = () => {
   }
 
   const { summary, participationFunnel, rankings, bidHistory, auditTrail } = report;
+  const currency = currencySymbol(summary?.baseCurrency);
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto print:p-0 print:bg-white print:text-black">
@@ -73,7 +75,7 @@ const ReportsDetail: React.FC = () => {
         <h1 className="text-xl font-bold uppercase">BLACK BOX LIMITED PROCUREMENT</h1>
         <h2 className="text-md font-bold mt-1">E-AUCTION REPORT: {summary.title}</h2>
         <p className="text-[10px] text-neutral-500 mt-0.5">
-          Generated on: {new Date().toLocaleString()} | Auction ID: {summary.id}
+          Generated on: {formatDateTime(new Date())} | Auction ID: {summary.id}
         </p>
       </div>
 
@@ -85,9 +87,9 @@ const ReportsDetail: React.FC = () => {
           { label: 'Accepted Terms', value: participationFunnel.termsAccepted },
           { label: 'Bids Submitted', value: participationFunnel.bidsSubmitted },
         ].map((f, idx) => (
-          <div key={idx} className="bg-white dark:bg-slate-900 border border-neutral-250 dark:border-slate-800 p-4 rounded-xl text-center">
+          <div key={idx} className="bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-4 rounded-xl text-center">
             <span className="block text-[9px] text-neutral-400 font-bold uppercase tracking-wider">{f.label}</span>
-            <span className="text-lg font-bold text-neutral-850 dark:text-white font-mono mt-1 block">{f.value}</span>
+            <span className="text-lg font-bold text-neutral-800 dark:text-white font-mono mt-1 block">{f.value}</span>
           </div>
         ))}
       </div>
@@ -106,7 +108,7 @@ const ReportsDetail: React.FC = () => {
               onClick={() => setActiveTab(tab.id as any)}
               className={`pb-2 px-1 flex items-center gap-1.5 transition border-b-2 ${
                 activeTab === tab.id
-                  ? 'border-b-2 border-indigo-650 text-indigo-655 font-bold'
+                  ? 'border-b-2 border-indigo-600 text-indigo-600 font-bold'
                   : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-white'
               }`}
             >
@@ -121,7 +123,7 @@ const ReportsDetail: React.FC = () => {
       <div className="bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-6 rounded-2xl shadow-sm text-xs print:border-none print:p-0">
         
         {/* RANKINGS comparative sheet */}
-        {(activeTab === 'rankings' || window.matchMedia('print').matches) && (
+        {activeTab === 'rankings' && (
           <div className="space-y-4">
             <h3 className="font-bold text-neutral-900 dark:text-white text-sm print:text-xs">Final Comparative Rankings</h3>
             <div className="border border-neutral-100 dark:border-slate-800 rounded-xl overflow-hidden print:border-black">
@@ -137,16 +139,16 @@ const ReportsDetail: React.FC = () => {
                     <th className="p-3 text-right">Improvement %</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-100 dark:divide-slate-850">
+                <tbody className="divide-y divide-neutral-100 dark:divide-slate-800">
                   {rankings.map((r: any) => (
-                    <tr key={r.email} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/40">
+                    <tr key={r.email} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
                       <td className="p-3 font-bold">{r.rank || '--'}</td>
                       <td className="p-3 font-semibold">{r.vendorName}</td>
-                      <td className="p-3 font-mono">${Number(r.initialBid || 0).toLocaleString()}</td>
-                      <td className="p-3 font-mono">${Number(r.initialEffective || 0).toLocaleString()}</td>
-                      <td className="p-3 font-mono font-bold">${Number(r.finalBid || 0).toLocaleString()}</td>
-                      <td className="p-3 font-mono font-bold text-indigo-650 print:text-black">
-                        ${Number(r.finalEffective || 0).toLocaleString()}
+                      <td className="p-3 font-mono">{r.initialBid != null ? `${currency}${Number(r.initialBid).toLocaleString()}` : '--'}</td>
+                      <td className="p-3 font-mono">{r.initialEffective != null ? `${currency}${Number(r.initialEffective).toLocaleString()}` : '--'}</td>
+                      <td className="p-3 font-mono font-bold">{r.finalBid != null ? `${currency}${Number(r.finalBid).toLocaleString()}` : '--'}</td>
+                      <td className="p-3 font-mono font-bold text-indigo-600 print:text-black">
+                        {r.finalEffective != null ? `${currency}${Number(r.finalEffective).toLocaleString()}` : '--'}
                       </td>
                       <td className="p-3 text-right font-bold text-emerald-600 font-mono">
                         {r.improvementPercent}%
@@ -163,7 +165,7 @@ const ReportsDetail: React.FC = () => {
         {activeTab === 'bids' && (
           <div className="space-y-4 print:block">
             <h3 className="font-bold text-neutral-900 dark:text-white text-sm">Chronological Bid Logs</h3>
-            <div className="border border-neutral-100 dark:border-slate-850 rounded-xl overflow-hidden">
+            <div className="border border-neutral-100 dark:border-slate-800 rounded-xl overflow-hidden">
               <table className="w-full text-left border-collapse text-[11px]">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-900/60 font-bold border-b border-neutral-200 dark:border-slate-800 text-neutral-400">
@@ -175,14 +177,14 @@ const ReportsDetail: React.FC = () => {
                     <th className="p-3 text-right">Surrogate Bid</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-100 dark:divide-slate-850">
+                <tbody className="divide-y divide-neutral-100 dark:divide-slate-800">
                   {bidHistory.map((b: any) => (
-                    <tr key={b.sequenceNumber} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/40">
+                    <tr key={b.sequenceNumber} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
                       <td className="p-3 font-mono font-bold">#{b.sequenceNumber}</td>
                       <td className="p-3 font-semibold">{b.vendorName}</td>
-                      <td className="p-3 font-mono">${Number(b.amount).toLocaleString()}</td>
-                      <td className="p-3 font-mono font-bold">${Number(b.effectiveTotal).toLocaleString()}</td>
-                      <td className="p-3 text-neutral-500">{new Date(b.timestamp).toLocaleString()}</td>
+                      <td className="p-3 font-mono">{currency}{Number(b.amount).toLocaleString()}</td>
+                      <td className="p-3 font-mono font-bold">{currency}{Number(b.effectiveTotal).toLocaleString()}</td>
+                      <td className="p-3 text-neutral-500">{formatDateTime(b.timestamp)}</td>
                       <td className="p-3 text-right font-bold text-neutral-600">
                         {b.submittedAsSurrogate ? 'Yes' : 'No'}
                       </td>
@@ -202,10 +204,10 @@ const ReportsDetail: React.FC = () => {
               {auditTrail.map((log: any) => (
                 <div key={log.id} className="p-3 border dark:border-slate-800 rounded-xl bg-slate-50/20 text-[11px] leading-relaxed">
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-indigo-650 dark:text-indigo-400 uppercase">{log.action}</span>
-                    <span className="text-[10px] text-neutral-400">{new Date(log.createdAt).toLocaleString()}</span>
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400 uppercase">{log.action}</span>
+                    <span className="text-[10px] text-neutral-400">{formatDateTime(log.createdAt)}</span>
                   </div>
-                  <p className="text-neutral-650 dark:text-neutral-400 mt-1">
+                  <p className="text-neutral-600 dark:text-neutral-400 mt-1">
                     Affected entity: <span className="font-semibold">{log.entity}</span>
                   </p>
                   {log.payload && (

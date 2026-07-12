@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { History, Search, Filter, ShieldCheck } from 'lucide-react';
+import { History, Search } from 'lucide-react';
+import { formatDateTime } from '../utils/format';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -19,8 +20,8 @@ const AuditTrail: React.FC = () => {
 
       const res = await axios.get(`${API_URL}/audit-logs`, { params });
       setLogs(res.data.data);
-    } catch (err) {
-      console.error('Failed to load audit logs:', err);
+    } catch {
+      setLogs([]);
     } finally {
       setLoading(false);
     }
@@ -35,7 +36,7 @@ const AuditTrail: React.FC = () => {
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-white flex items-center gap-2 font-sans">
-          <History size={20} className="text-indigo-650" />
+          <History size={20} className="text-indigo-600" />
           System Audit Trail
         </h1>
         <p className="text-xs text-neutral-500 mt-1">
@@ -91,12 +92,12 @@ const AuditTrail: React.FC = () => {
             >
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-indigo-650 dark:text-indigo-400 uppercase tracking-wide">
+                  <span className="font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide">
                     {log.action}
                   </span>
                   <span className="text-[10px] text-neutral-400">({log.entity})</span>
                 </div>
-                <p className="text-neutral-500">Affected ID: <span className="font-mono text-neutral-700 dark:text-neutral-350">{log.entityId}</span></p>
+                <p className="text-neutral-500">Affected ID: <span className="font-mono text-neutral-700 dark:text-neutral-300">{log.entityId}</span></p>
                 
                 {log.payload && (
                   <pre className="mt-1 bg-slate-50 dark:bg-slate-950 p-2 rounded text-[10px] text-neutral-500 overflow-x-auto max-w-xl">
@@ -107,10 +108,10 @@ const AuditTrail: React.FC = () => {
 
               <div className="text-right space-y-1">
                 <span className="text-[10px] text-neutral-400 block">
-                  {new Date(log.createdAt).toLocaleString()}
+                  {formatDateTime(log.createdAt)}
                 </span>
                 <span className="inline-flex px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] text-neutral-500">
-                  IP: {log.ipAddress || '127.0.0.1'}
+                  IP: {log.ipAddress || '—'}
                 </span>
               </div>
             </div>

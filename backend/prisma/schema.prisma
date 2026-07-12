@@ -54,6 +54,8 @@ model User {
   approvedAuctions Auction[] @relation("AuctionApprover")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+
+  @@index([companyId])
 }
 
 model Vendor {
@@ -66,6 +68,8 @@ model Vendor {
   acceptances  VendorAcceptance[]
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
+
+  @@index([companyId])
 }
 
 model Auction {
@@ -76,6 +80,9 @@ model Auction {
   startAt         DateTime?
   endAt           DateTime?
   enabled         Boolean           @default(false)
+  // Number of anti-sniping overtime extensions consumed (capped by
+  // BidRuleSnapshot.maxExtensions).
+  extensionCount  Int               @default(0)
   companyId       String
   company         Company           @relation(fields: [companyId], references: [id])
   ownerId         String
@@ -89,6 +96,9 @@ model Auction {
   baseCurrency    String            @default("INR")
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
+
+  @@index([companyId, state])
+  @@index([state, enabled])
 }
 
 model Participant {
@@ -103,6 +113,10 @@ model Participant {
   bids          Bid[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  // A vendor can only be invited to a given auction once.
+  @@unique([auctionId, vendorId])
+  @@index([vendorId])
 }
 
 model Bid {
@@ -121,6 +135,12 @@ model Bid {
   hash                 String
   previousHash         String?
   createdAt            DateTime    @default(now())
+
+  // Hot paths: leading-bid lookup (auctionId + effectiveTotal ordering) and
+  // chronological history / hash-chain tail (auctionId + timestamp ordering).
+  @@index([auctionId, effectiveTotal])
+  @@index([auctionId, timestamp])
+  @@index([participantId])
 }
 
 model BidRuleSnapshot {
@@ -151,6 +171,11 @@ model AuditLog {
   payload   Json?
   ipAddress String?
   createdAt DateTime @default(now())
+
+  @@index([entityId])
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
 }
 
 model DocumentTemplate {
@@ -160,6 +185,9 @@ model DocumentTemplate {
   content     String
   acceptances VendorAcceptance[]
   createdAt   DateTime           @default(now())
+
+  // Template versions are strictly unique per type.
+  @@unique([type, version])
 }
 
 model VendorAcceptance {
@@ -172,4 +200,8 @@ model VendorAcceptance {
   document   DocumentTemplate @relation(fields: [documentId], references: [id])
   acceptedAt DateTime         @default(now())
   ipAddress  String?
+
+  // One acceptance record per vendor, auction and document version.
+  @@unique([vendorId, auctionId, documentId])
+  @@index([auctionId])
 }

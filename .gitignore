@@ -9,13 +9,10 @@ build/
 out/
 .next/
 
-# Environment files
+# Environment files (templates like .env.example are tracked; real configs never are)
 .env
-.env.dev
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 
 # Database files
 *.sqlite
