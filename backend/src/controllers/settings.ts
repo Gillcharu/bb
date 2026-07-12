@@ -129,7 +129,9 @@ export const createVendor = async (req: Request, res: Response, next: NextFuncti
 // 4. Document Templates CRUD
 export const listTemplates = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // Company scoping: staff only see their own company's templates.
     const templates = await prisma.documentTemplate.findMany({
+      where: req.user!.role === 'SYSTEM_ADMIN' ? {} : { companyId: req.user!.companyId },
       orderBy: { createdAt: 'desc' },
     });
     return res.status(200).json({ success: true, data: templates });
@@ -141,12 +143,13 @@ export const listTemplates = async (req: Request, res: Response, next: NextFunct
 export const createTemplate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { type, content } = req.body;
+    const companyId = req.user!.companyId;
 
-    // Version increment inside a transaction; the (type, version) unique
-    // constraint guarantees no duplicate versions under concurrent writes.
+    // Version increment inside a transaction; the (companyId, type, version)
+    // unique constraint guarantees no duplicate versions under concurrent writes.
     const template = await prisma.$transaction(async tx => {
       const latest = await tx.documentTemplate.findFirst({
-        where: { type },
+        where: { type, companyId },
         orderBy: { version: 'desc' },
       });
       const nextVersion = latest ? latest.version + 1 : 1;
@@ -156,6 +159,7 @@ export const createTemplate = async (req: Request, res: Response, next: NextFunc
           type,
           content,
           version: nextVersion,
+          companyId,
         },
       });
     });

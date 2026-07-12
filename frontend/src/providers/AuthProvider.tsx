@@ -112,6 +112,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = () => {
+    // Best-effort server-side revocation: bumps the account's tokenVersion so the
+    // refresh token cannot be reused, even if it was captured. Fire-and-forget so
+    // the UI logs out instantly regardless of network state.
+    const hadRefresh = !!localStorage.getItem('refreshToken');
+    if (hadRefresh) {
+      axios.post(`${API_URL}/auth/logout`).catch(() => {
+        /* already clearing local session below */
+      });
+    }
     removeActiveToken();
     localStorage.removeItem('refreshToken');
     setToken(null);

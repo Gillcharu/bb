@@ -6,8 +6,13 @@ import { AuctionState, Prisma, Role } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { logger } from '../utils/logger';
+import { AsyncLock } from '../utils/asyncLock';
 
 const BCRYPT_COST = 12;
+
+// Serializes bid transactions per auction within this process so a burst of
+// bidders on one auction cannot exhaust the DB connection pool (see AsyncLock).
+const bidLock = new AsyncLock();
 
 // Helper to log system/user events to AuditLog
 const logAuditEvent = async (
@@ -135,7 +140,8 @@ export const getAuctionDetails = async (req: Request, res: Response, next: NextF
         bidRuleSnapshot: true,
         participants: {
           include: {
-            vendor: true,
+            // Only the fields the detail view renders — no internal columns.
+            vendor: { select: { id: true, name: true, email: true } },
           },
         },
         bids: {
@@ -496,8 +502,11 @@ export const validatePublish = async (req: Request, res: Response, next: NextFun
       message: hasVendors ? `${auction!.participants.length} vendor(s) mapped` : 'At least one participant required',
     });
 
-    // 4. Documents check
-    const docTypes = await prisma.documentTemplate.groupBy({ by: ['type'] });
+    // 4. Documents check — scoped to this auction's company.
+    const docTypes = await prisma.documentTemplate.groupBy({
+      by: ['type'],
+      where: { companyId: auction!.companyId },
+    });
     const availableTypes = docTypes.map(d => d.type);
     const hasDocs = ['TERMS', 'DISCLOSURE', 'RULES'].every(t => availableTypes.includes(t));
     checklist.push({
@@ -754,9 +763,13 @@ export const submitBid = async (req: Request, res: Response, next: NextFunction)
       return next(new AppError('Your bidding access has been restricted', 403, 'BLOCKED'));
     }
 
-    const result = await prisma.$transaction(
+    // In-process per-auction serialization runs BEFORE a connection is taken,
+    // so waiting bidders queue cheaply instead of holding an idle DB connection
+    // blocked on the row lock. The FOR UPDATE below remains the cross-instance
+    // guarantee when multiple app instances run behind a load balancer.
+    const result = await bidLock.run(id, () => prisma.$transaction(
       async tx => {
-        // Serialize concurrent bids per auction.
+        // Serialize concurrent bids per auction (cross-instance safety net).
         await tx.$queryRaw`SELECT id FROM "Auction" WHERE id = ${id} FOR UPDATE`;
 
         const auction = await tx.auction.findUnique({
@@ -880,7 +893,7 @@ export const submitBid = async (req: Request, res: Response, next: NextFunction)
         return { newBid, isExtended, newEnd, extensionsUsed, rule, effectiveTotal };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000 }
-    );
+    ));
 
     const { newBid, isExtended, newEnd, extensionsUsed, rule } = result;
 
@@ -1354,7 +1367,7 @@ export const acceptTerms = async (req: Request, res: Response, next: NextFunctio
         auctionId: id,
         vendor: { email: req.user!.email },
       },
-      include: { vendor: true },
+      include: { vendor: true, auction: { select: { companyId: true } } },
     });
 
     if (!participant) {
@@ -1377,9 +1390,11 @@ export const acceptTerms = async (req: Request, res: Response, next: NextFunctio
       data: { acceptedTerms: true },
     });
 
-    // Record acceptance against the latest version of each template type.
-    // The client-reported IP is never trusted; only the connection IP is stored.
+    // Record acceptance against the latest version of each template type,
+    // scoped to the auction's owning company. The client-reported IP is never
+    // trusted; only the connection IP is stored.
     const docs = await prisma.documentTemplate.findMany({
+      where: { companyId: participant.auction.companyId },
       orderBy: { version: 'desc' },
     });
 
@@ -1426,6 +1441,12 @@ export const getAuctionTerms = async (req: Request, res: Response, next: NextFun
   try {
     const { id } = req.params;
 
+    // Resolve the auction's owning company; templates are read strictly within it.
+    const auction = await prisma.auction.findUnique({ where: { id }, select: { companyId: true } });
+    if (!auction) {
+      return next(new AppError('Auction not found', 404, 'NOT_FOUND'));
+    }
+
     if (req.user!.role === 'VENDOR') {
       const participant = await prisma.participant.findFirst({
         where: { auctionId: id, vendor: { email: req.user!.email } },
@@ -1435,11 +1456,11 @@ export const getAuctionTerms = async (req: Request, res: Response, next: NextFun
         return next(new AppError('You are not a participant of this auction', 403, 'NOT_A_PARTICIPANT'));
       }
     } else {
-      const auction = await prisma.auction.findUnique({ where: { id }, select: { companyId: true } });
-      assertCompanyScope(req, auction as any);
+      assertCompanyScope(req, auction);
     }
 
     const docs = await prisma.documentTemplate.findMany({
+      where: { companyId: auction.companyId },
       orderBy: { version: 'desc' },
     });
 

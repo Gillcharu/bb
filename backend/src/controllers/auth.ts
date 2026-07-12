@@ -10,6 +10,11 @@ import { env } from '../config/env';
 const JWT_SECRET = env.jwtSecret;
 const JWT_REFRESH_SECRET = env.jwtRefreshSecret;
 
+// A fixed bcrypt hash of a random string. Compared against when no user is found
+// so login takes the same amount of time whether or not the account exists,
+// closing the timing side-channel that would otherwise enable enumeration.
+const DUMMY_HASH = '$2b$12$MH.GF3kzSSOYz5h8.j5BDuka19rMfXEQCsF1w7xr6KngNQbOD.rIy';
+
 export const login = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body;
@@ -23,14 +28,13 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       include: { company: true },
     });
 
-    if (!user || user.role === 'VENDOR') {
-      // Security rule: generic error message to prevent account enumeration.
-      // Vendors must use the dedicated per-auction vendor login flow.
-      return next(new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS'));
-    }
+    // Always run a bcrypt comparison (against a dummy hash for missing/ineligible
+    // accounts) so the response time is identical regardless of whether the
+    // account exists — no enumeration via timing, and one generic error message.
+    const eligible = !!user && user.role !== 'VENDOR';
+    const isMatch = await bcrypt.compare(password, eligible ? user!.password : DUMMY_HASH);
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
+    if (!eligible || !isMatch) {
       return next(new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS'));
     }
 
@@ -46,10 +50,12 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       { expiresIn: '15m' }
     );
 
-    // Sign Refresh Token
+    // Sign Refresh Token. It embeds the user's current tokenVersion; logout
+    // increments that version, invalidating every outstanding refresh token.
     const refreshToken = jwt.sign(
       {
         id: user.id,
+        tokenVersion: user.tokenVersion,
       },
       JWT_REFRESH_SECRET,
       { expiresIn: '7d' }
@@ -102,10 +108,10 @@ export const refresh = async (req: Request, res: Response, next: NextFunction) =
       return next(new AppError('Refresh token is required', 400));
     }
 
-    let decoded: any;
+    let decoded: { id: string; tokenVersion?: number };
     try {
-      decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-    } catch (err) {
+      decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as { id: string; tokenVersion?: number };
+    } catch {
       return next(new AppError('Invalid or expired refresh token', 401, 'INVALID_REFRESH_TOKEN'));
     }
 
@@ -114,8 +120,10 @@ export const refresh = async (req: Request, res: Response, next: NextFunction) =
       include: { company: true },
     });
 
-    if (!user) {
-      return next(new AppError('User not found', 401, 'USER_NOT_FOUND'));
+    // Reject refresh tokens whose version is stale (i.e. the user logged out or
+    // rotated their sessions after this token was issued). Use a generic error.
+    if (!user || user.role === 'VENDOR' || decoded.tokenVersion !== user.tokenVersion) {
+      return next(new AppError('Invalid or expired refresh token', 401, 'INVALID_REFRESH_TOKEN'));
     }
 
     const accessToken = jwt.sign(
@@ -188,13 +196,12 @@ export const vendorLogin = async (req: Request, res: Response, next: NextFunctio
       include: { company: true },
     });
 
-    if (!user || user.role !== 'VENDOR') {
-      return next(new AppError('Invalid username or password', 401, 'INVALID_CREDENTIALS'));
-    }
+    // Constant-time comparison against a dummy hash when the account is missing
+    // or is not a vendor, so timing cannot be used to enumerate vendor accounts.
+    const eligible = !!user && user.role === 'VENDOR';
+    const isMatch = await bcrypt.compare(password, eligible ? user!.password : DUMMY_HASH);
 
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
+    if (!eligible || !isMatch) {
       return next(new AppError('Invalid username or password', 401, 'INVALID_CREDENTIALS'));
     }
 
@@ -267,6 +274,28 @@ export const vendorLogin = async (req: Request, res: Response, next: NextFunctio
         },
       },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Logout: bump the user's tokenVersion so every outstanding refresh token is
+// immediately invalidated. Requires a valid access token (authenticateJWT).
+// Note: already-issued access tokens remain valid until they expire (15m) —
+// that short window is the standard trade-off of stateless JWTs; the refresh
+// token, the long-lived credential, is revoked instantly.
+export const logout = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      return next(new AppError('Unauthorized', 401, 'UNAUTHORIZED'));
+    }
+
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { tokenVersion: { increment: 1 } },
+    });
+
+    return res.status(200).json({ success: true, message: 'Logged out' });
   } catch (error) {
     next(error);
   }

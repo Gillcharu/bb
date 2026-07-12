@@ -31,7 +31,7 @@ enum AuctionState {
 }
 
 model Company {
-  id           String    @id @default(uuid())
+  id           String             @id @default(uuid())
   name         String
   logoUrl      String?
   primaryColor String?
@@ -39,8 +39,9 @@ model Company {
   users        User[]
   vendors      Vendor[]
   auctions     Auction[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  templates    DocumentTemplate[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 }
 
 model User {
@@ -48,6 +49,8 @@ model User {
   email            String    @unique
   password         String
   role             Role
+  // Incremented on logout to invalidate all outstanding refresh tokens.
+  tokenVersion     Int       @default(0)
   companyId        String
   company          Company   @relation(fields: [companyId], references: [id])
   ownedAuctions    Auction[] @relation("AuctionOwner")
@@ -183,11 +186,15 @@ model DocumentTemplate {
   type        String // e.g., TERMS, DISCLOSURE, RULES
   version     Int
   content     String
+  // Templates are company-scoped; legacy NULL rows are treated as invisible.
+  companyId   String?
+  company     Company?           @relation(fields: [companyId], references: [id])
   acceptances VendorAcceptance[]
   createdAt   DateTime           @default(now())
 
-  // Template versions are strictly unique per type.
-  @@unique([type, version])
+  // Template versions are strictly unique per type within a company.
+  @@unique([companyId, type, version])
+  @@index([companyId])
 }
 
 model VendorAcceptance {
