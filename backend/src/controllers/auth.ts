@@ -47,7 +47,7 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
         companyId: user.companyId,
       },
       JWT_SECRET,
-      { expiresIn: '15m' }
+      { expiresIn: '1h' }
     );
 
     // Sign Refresh Token. It embeds the user's current tokenVersion; logout
@@ -134,7 +134,7 @@ export const refresh = async (req: Request, res: Response, next: NextFunction) =
         companyId: user.companyId,
       },
       JWT_SECRET,
-      { expiresIn: '15m' }
+      { expiresIn: '1h' }
     );
 
     return res.status(200).json({
