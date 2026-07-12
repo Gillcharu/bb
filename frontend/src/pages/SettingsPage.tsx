@@ -191,7 +191,7 @@ const SettingsPage: React.FC = () => {
                   value={newUser.email}
                   onChange={(e) => setNewUser(p => ({ ...p, email: e.target.value }))}
                   placeholder="e.g. buyer@company.com"
-                  className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
+                  className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                   required
                 />
               </div>
@@ -203,7 +203,7 @@ const SettingsPage: React.FC = () => {
                   onChange={(e) => setNewUser(p => ({ ...p, password: e.target.value }))}
                   placeholder="Initial password (min 8 chars)..."
                   minLength={8}
-                  className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
+                  className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                   required
                 />
               </div>
@@ -212,7 +212,7 @@ const SettingsPage: React.FC = () => {
                 <select
                   value={newUser.role}
                   onChange={(e) => setNewUser(p => ({ ...p, role: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-xl p-2 bg-white focus:outline-none"
+                  className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                 >
                   <option value="AUCTION_OWNER">Auction Owner (Buyer)</option>
                   <option value="APPROVER">Supervisor Approver</option>
@@ -250,7 +250,7 @@ const SettingsPage: React.FC = () => {
                 type="text"
                 value={company.name}
                 onChange={(e) => setCompany({ ...company, name: e.target.value })}
-                className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
+                className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
               />
             </div>
             <div>
@@ -259,7 +259,7 @@ const SettingsPage: React.FC = () => {
                 type="text"
                 value={company.primaryColor || '#0B2447'}
                 onChange={(e) => setCompany({ ...company, primaryColor: e.target.value })}
-                className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
+                className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
               />
             </div>
             <button
@@ -283,7 +283,7 @@ const SettingsPage: React.FC = () => {
                   value={newVendor.name}
                   onChange={(e) => setNewVendor(p => ({ ...p, name: e.target.value }))}
                   placeholder="e.g. Acme Components"
-                  className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
+                  className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                   required
                 />
               </div>
@@ -294,7 +294,7 @@ const SettingsPage: React.FC = () => {
                   value={newVendor.email}
                   onChange={(e) => setNewVendor(p => ({ ...p, email: e.target.value }))}
                   placeholder="e.g. contact@acme.com"
-                  className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
+                  className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                   required
                 />
               </div>
@@ -330,7 +330,7 @@ const SettingsPage: React.FC = () => {
                   <select
                     value={newTemplate.type}
                     onChange={(e) => setNewTemplate(p => ({ ...p, type: e.target.value }))}
-                    className="w-full border border-neutral-200 rounded-xl p-2 bg-white focus:outline-none"
+                    className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                   >
                     <option value="TERMS">Terms & Conditions</option>
                     <option value="DISCLOSURE">Compliance Disclosures</option>
@@ -345,7 +345,7 @@ const SettingsPage: React.FC = () => {
                   value={newTemplate.content}
                   onChange={(e) => setNewTemplate(p => ({ ...p, content: e.target.value }))}
                   placeholder="Enter full legal document text templates..."
-                  className="w-full border border-neutral-200 rounded-xl p-2 bg-white focus:outline-none"
+                  className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
                   required
                 />
               </div>
@@ -382,7 +382,7 @@ const SettingsPage: React.FC = () => {
                 value={smtp.host}
                 placeholder="e.g. smtp.yourcompany.com"
                 onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
-                className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
+                className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
               />
             </div>
             <div>
@@ -394,7 +394,7 @@ const SettingsPage: React.FC = () => {
                 max="65535"
                 value={smtp.port}
                 onChange={(e) => setSmtp({ ...smtp, port: e.target.value })}
-                className="w-full border border-neutral-200 rounded-xl p-2 focus:outline-none"
+                className="w-full border border-neutral-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-950 text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-indigo-600"
               />
             </div>
             <button
