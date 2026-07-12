@@ -239,3 +239,31 @@ body {
 .shadow-indigo-600\/15 {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
 }
+
+/* Dark-mode legibility: lift muted grey secondary text to readable contrast */
+.dark .text-neutral-400,
+.dark .text-neutral-500,
+.dark .text-neutral-600,
+.dark .text-zinc-400,
+.dark .text-zinc-500,
+.dark .text-zinc-600,
+.dark .text-slate-400,
+.dark .text-slate-500,
+.dark .text-slate-600,
+.dark .text-\[\#6B7280\] {
+  color: #b6bac2 !important;
+}
+.dark .text-neutral-400,
+.dark .text-zinc-400,
+.dark .text-slate-400 {
+  color: #c6cad2 !important;
+}
+
+/* Raise the tiniest fonts to a readable floor (both themes) */
+.text-\[9px\],
+.text-\[10px\] {
+  font-size: 11px !important;
+}
+.text-\[11px\] {
+  font-size: 12px !important;
+}
