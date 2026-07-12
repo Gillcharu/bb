@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
-import { Download } from 'lucide-react';
+import { Download, Sun, Moon } from 'lucide-react';
 import BlackBoxLogo from '../components/BlackBoxLogo';
 import { getActiveToken } from '../utils/tokenHelper';
 import { formatTime, formatDate, currencySymbol } from '../utils/format';
@@ -27,6 +27,18 @@ const VendorLiveConsole: React.FC = () => {
   const [socketConnected, setSocketConnected] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [latency, setLatency] = useState<number | null>(null);
+
+  // Theme (shared global `.dark` class, persisted like the rest of the app)
+  const [isLightTheme, setIsLightTheme] = useState(() => localStorage.getItem('theme') === 'light');
+  useEffect(() => {
+    if (isLightTheme) {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    } else {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    }
+  }, [isLightTheme]);
 
   // Server-anchored clock: offsetMs = serverNow - clientNow. The countdown and
   // the server clock display never trust the local clock alone.
@@ -321,7 +333,7 @@ const VendorLiveConsole: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F5F7FA] flex items-center justify-center text-xs text-[#6B7280] font-body tracking-wider" role="status">
+      <div className="min-h-screen bg-[#F5F7FA] dark:bg-[#070708] flex items-center justify-center text-xs text-[#6B7280] dark:text-slate-400 font-body tracking-wider" role="status">
         Initializing live bidding console...
       </div>
     );
@@ -329,9 +341,9 @@ const VendorLiveConsole: React.FC = () => {
 
   if (loadError && !auction) {
     return (
-      <div className="min-h-screen bg-[#F5F7FA] flex flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-sm font-semibold text-[#0F172A]">Unable to load the bidding console</p>
-        <p className="text-xs text-[#6B7280] max-w-sm">{loadError}</p>
+      <div className="min-h-screen bg-[#F5F7FA] dark:bg-[#070708] flex flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-sm font-semibold text-[#0F172A] dark:text-white">Unable to load the bidding console</p>
+        <p className="text-xs text-[#6B7280] dark:text-slate-400 max-w-sm">{loadError}</p>
         <button
           onClick={() => {
             setLoading(true);
@@ -353,7 +365,7 @@ const VendorLiveConsole: React.FC = () => {
   const isOvertime = auction?.state === 'OVERTIME';
 
   return (
-    <div className="min-h-screen bg-[#F5F7FA] text-[#0F172A] font-body flex flex-col justify-between relative z-10">
+    <div className="min-h-screen bg-[#F5F7FA] dark:bg-[#070708] text-[#0F172A] dark:text-white font-body flex flex-col justify-between relative z-10">
 
       {/* Toast Notification Container */}
       <div className="fixed bottom-6 right-6 space-y-3 z-50 max-w-sm w-full" aria-live="polite">
@@ -361,36 +373,45 @@ const VendorLiveConsole: React.FC = () => {
           <div
             key={t.id}
             role="alert"
-            className={`p-4 rounded-lg border text-xs shadow-md flex items-start gap-2.5 transition-all duration-300 bg-white ${
+            className={`p-4 rounded-lg border text-xs shadow-md flex items-start gap-2.5 transition-all duration-300 bg-white dark:bg-slate-900 ${
               t.type === 'success'
-                ? 'border-emerald-200 text-emerald-800'
-                : 'border-red-200 text-red-800'
+                ? 'border-emerald-200 text-emerald-800 dark:text-emerald-400'
+                : 'border-red-200 text-red-800 dark:text-red-400'
             }`}
           >
             <span className="font-bold text-sm leading-none" aria-hidden="true">{t.type === 'success' ? '✓' : '✗'}</span>
             <div>
               <span className="font-bold block">{t.message}</span>
-              {t.subtext && <span className="text-[#6B7280] mt-0.5 block">{t.subtext}</span>}
+              {t.subtext && <span className="text-[#6B7280] dark:text-slate-400 mt-0.5 block">{t.subtext}</span>}
             </div>
           </div>
         ))}
       </div>
 
       {/* Top Header */}
-      <header className="max-w-7xl w-full mx-auto flex flex-wrap items-center justify-between gap-3 border-b border-[#E4E7EC] pb-4 px-6 pt-4">
+      <header className="max-w-7xl w-full mx-auto flex flex-wrap items-center justify-between gap-3 border-b border-[#E4E7EC] dark:border-slate-800 pb-4 px-6 pt-4">
         <div className="flex items-center gap-3 min-w-0">
-          <BlackBoxLogo className="h-7 w-7" color="#0F172A" />
+          <BlackBoxLogo className="h-7 w-7" color={isLightTheme ? '#0F172A' : 'white'} />
           <div className="flex items-center gap-2 min-w-0">
-            <span className="font-display font-semibold text-sm tracking-tight text-[#0F172A]">Black Box</span>
+            <span className="font-display font-semibold text-sm tracking-tight text-[#0F172A] dark:text-white">Black Box</span>
             <span className="text-zinc-300" aria-hidden="true">|</span>
-            <span className="text-[11px] text-[#6B7280] font-display font-semibold truncate max-w-[160px] sm:max-w-md">{auction?.title}</span>
+            <span className="text-[11px] text-[#6B7280] dark:text-slate-400 font-display font-semibold truncate max-w-[160px] sm:max-w-md">{auction?.title}</span>
             <span className="text-zinc-300 hidden sm:inline" aria-hidden="true">|</span>
-            <span className="text-[9px] text-[#6B7280] font-display uppercase tracking-wider mt-0.5 hidden sm:inline">Live Auction</span>
+            <span className="text-[9px] text-[#6B7280] dark:text-slate-400 font-display uppercase tracking-wider mt-0.5 hidden sm:inline">Live Auction</span>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
-          <span className="text-[10px] text-[#6B7280] font-medium font-body hidden md:inline">
+          <button
+            type="button"
+            onClick={() => setIsLightTheme(!isLightTheme)}
+            title={isLightTheme ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            aria-label={isLightTheme ? 'Switch to dark mode' : 'Switch to light mode'}
+            className="p-2 rounded-lg border border-[#E4E7EC] dark:border-slate-800 text-[#6B7280] dark:text-slate-400 hover:bg-[#F5F7FA] dark:hover:bg-slate-800 cursor-pointer"
+          >
+            {isLightTheme ? <Moon size={13} /> : <Sun size={13} />}
+          </button>
+          <span className="text-[10px] text-[#6B7280] dark:text-slate-400 font-medium font-body hidden md:inline">
             ✓ Session scoped to this auction only
           </span>
           {isOvertime && !isAuctionClosed ? (
@@ -407,8 +428,8 @@ const VendorLiveConsole: React.FC = () => {
               <div className="flex items-center gap-1.5 text-[#059669] text-xs font-bold font-display">
                 <span className="h-2 w-2 rounded-full bg-[#059669] animate-pulse" aria-hidden="true" /> LIVE
               </div>
-              <span className="text-xs text-[#6B7280] font-body">Closes in</span>
-              <span className="font-mono-numbers font-bold text-xs text-[#0F172A] bg-zinc-200/50 px-2 py-0.5 rounded">{formatCountdown()}</span>
+              <span className="text-xs text-[#6B7280] dark:text-slate-400 font-body">Closes in</span>
+              <span className="font-mono-numbers font-bold text-xs text-[#0F172A] dark:text-white bg-zinc-200 dark:bg-slate-800/50 px-2 py-0.5 rounded">{formatCountdown()}</span>
             </div>
           ) : (
             <span className="text-xs text-red-600 font-bold uppercase tracking-wider">Closed</span>
@@ -424,40 +445,40 @@ const VendorLiveConsole: React.FC = () => {
 
           {isAuctionClosed ? (
             /* Closed State View */
-            <div className="bg-white border border-[#E4E7EC] rounded-lg p-8 space-y-6 shadow-sm">
-              <div className="flex items-center gap-2 border-b border-[#F1F3F7] pb-3">
-                <span className="h-2.5 w-2.5 rounded-full bg-[#E4E7EC]" aria-hidden="true" />
-                <h2 className="text-lg font-display font-bold text-[#0F172A] uppercase tracking-wider">Auction Closed</h2>
+            <div className="bg-white dark:bg-slate-900 border border-[#E4E7EC] dark:border-slate-800 rounded-lg p-8 space-y-6 shadow-sm">
+              <div className="flex items-center gap-2 border-b border-[#F1F3F7] dark:border-slate-800 pb-3">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#E4E7EC] dark:bg-slate-800" aria-hidden="true" />
+                <h2 className="text-lg font-display font-bold text-[#0F172A] dark:text-white uppercase tracking-wider">Auction Closed</h2>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-[#F5F7FA] border border-[#E4E7EC] rounded-[6px] p-4 text-center">
-                  <span className="block font-display text-[11px] text-[#6B7280] uppercase tracking-wider">Your final rank</span>
-                  <span className="text-3xl font-mono-numbers font-bold text-[#0F172A] block mt-2">{ownRank !== null ? `#${ownRank}` : '—'}</span>
+                <div className="bg-[#F5F7FA] dark:bg-[#070708] border border-[#E4E7EC] dark:border-slate-800 rounded-[6px] p-4 text-center">
+                  <span className="block font-display text-[11px] text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Your final rank</span>
+                  <span className="text-3xl font-mono-numbers font-bold text-[#0F172A] dark:text-white block mt-2">{ownRank !== null ? `#${ownRank}` : '—'}</span>
                 </div>
-                <div className="bg-[#F5F7FA] border border-[#E4E7EC] rounded-[6px] p-4 text-center">
-                  <span className="block font-display text-[11px] text-[#6B7280] uppercase tracking-wider">Your final bid</span>
-                  <span className="text-lg font-mono-numbers font-semibold text-[#0F172A] block mt-3">
+                <div className="bg-[#F5F7FA] dark:bg-[#070708] border border-[#E4E7EC] dark:border-slate-800 rounded-[6px] p-4 text-center">
+                  <span className="block font-display text-[11px] text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Your final bid</span>
+                  <span className="text-lg font-mono-numbers font-semibold text-[#0F172A] dark:text-white block mt-3">
                     {personalHistory[0] ? `${currency}${Number(personalHistory[0].amount).toLocaleString()}` : '—'}
                   </span>
                 </div>
-                <div className="bg-[#F5F7FA] border border-[#E4E7EC] rounded-[6px] p-4 text-center">
-                  <span className="block font-display text-[11px] text-[#6B7280] uppercase tracking-wider">Effective total</span>
-                  <span className="text-lg font-mono-numbers font-semibold text-[#2563EB] block mt-3">
+                <div className="bg-[#F5F7FA] dark:bg-[#070708] border border-[#E4E7EC] dark:border-slate-800 rounded-[6px] p-4 text-center">
+                  <span className="block font-display text-[11px] text-[#6B7280] dark:text-slate-400 uppercase tracking-wider">Effective total</span>
+                  <span className="text-lg font-mono-numbers font-semibold text-[#2563EB] dark:text-indigo-400 block mt-3">
                     {ownLeadingValue !== null ? `${currency}${Number(ownLeadingValue).toLocaleString()}` : '—'}
                   </span>
                 </div>
               </div>
 
-              <div className="bg-[#F5F7FA] border border-[#E4E7EC] rounded-[6px] p-4 text-sm text-[#6B7280] leading-relaxed">
+              <div className="bg-[#F5F7FA] dark:bg-[#070708] border border-[#E4E7EC] dark:border-slate-800 rounded-[6px] p-4 text-sm text-[#6B7280] dark:text-slate-400 leading-relaxed">
                 Thank you for participating. Results will be communicated by your Auction Administrator.
               </div>
 
               <button
                 onClick={handleDownloadSummary}
-                className="w-full py-3.5 bg-white border border-[#E4E7EC] hover:bg-[#F5F7FA] text-[#0F172A] rounded-[6px] text-xs font-bold uppercase tracking-widest transition duration-300 font-body flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                className="w-full py-3.5 bg-white dark:bg-slate-900 border border-[#E4E7EC] dark:border-slate-800 hover:bg-[#F5F7FA] dark:bg-[#070708] text-[#0F172A] dark:text-white rounded-[6px] text-xs font-bold uppercase tracking-widest transition duration-300 font-body flex items-center justify-center gap-2 cursor-pointer shadow-sm"
               >
-                <Download size={13} className="text-[#2563EB]" aria-hidden="true" />
+                <Download size={13} className="text-[#2563EB] dark:text-indigo-400" aria-hidden="true" />
                 Download Bid Summary
               </button>
             </div>
@@ -480,38 +501,38 @@ const VendorLiveConsole: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* 1. Current best price card */}
-                <div className="bg-white border border-[#E4E7EC] rounded-lg p-5 flex flex-col justify-between min-h-[120px] shadow-sm">
-                  <span className="block font-display text-[11px] text-[#6B7280] tracking-wider uppercase font-semibold">
+                <div className="bg-white dark:bg-slate-900 border border-[#E4E7EC] dark:border-slate-800 rounded-lg p-5 flex flex-col justify-between min-h-[120px] shadow-sm">
+                  <span className="block font-display text-[11px] text-[#6B7280] dark:text-slate-400 tracking-wider uppercase font-semibold">
                     {isReverse ? 'Current Lowest (L1) — Effective' : 'Current Highest (H1) — Effective'}
                   </span>
-                  <div className="text-3xl font-bold font-mono-numbers text-[#0F172A] tracking-wider mt-2">
+                  <div className="text-3xl font-bold font-mono-numbers text-[#0F172A] dark:text-white tracking-wider mt-2">
                     {currentBestPrice !== null ? `${currency} ${currentBestPrice.toLocaleString()}` : 'No bids yet'}
                   </div>
                 </div>
 
                 {/* 2. Your Position details */}
-                <div className="bg-white border border-[#E4E7EC] rounded-lg p-5 flex flex-col justify-between min-h-[120px] shadow-sm">
-                  <span className="block font-display text-[11px] text-[#6B7280] tracking-wider uppercase font-semibold">
+                <div className="bg-white dark:bg-slate-900 border border-[#E4E7EC] dark:border-slate-800 rounded-lg p-5 flex flex-col justify-between min-h-[120px] shadow-sm">
+                  <span className="block font-display text-[11px] text-[#6B7280] dark:text-slate-400 tracking-wider uppercase font-semibold">
                     Your Position
                   </span>
                   <div className="grid grid-cols-3 gap-2 items-center text-xs font-body mt-2">
                     <div>
-                      <span className="text-[#6B7280] text-[9px] uppercase font-bold block leading-none">Rank</span>
-                      <span className="text-2xl font-bold text-[#0F172A] font-mono-numbers mt-1.5 block">
+                      <span className="text-[#6B7280] dark:text-slate-400 text-[9px] uppercase font-bold block leading-none">Rank</span>
+                      <span className="text-2xl font-bold text-[#0F172A] dark:text-white font-mono-numbers mt-1.5 block">
                         {ownRank !== null ? ownRank : '--'}
                       </span>
                     </div>
                     <div>
-                      <span className="text-[#6B7280] text-[9px] uppercase font-bold block leading-none">Your Effective</span>
-                      <span className="text-xs font-semibold text-[#0F172A] font-mono-numbers mt-2 block">
+                      <span className="text-[#6B7280] dark:text-slate-400 text-[9px] uppercase font-bold block leading-none">Your Effective</span>
+                      <span className="text-xs font-semibold text-[#0F172A] dark:text-white font-mono-numbers mt-2 block">
                         {ownLeadingValue !== null ? `${currency}${ownLeadingValue.toLocaleString()}` : '--'}
                       </span>
                     </div>
                     <div>
-                      <span className="text-[#6B7280] text-[9px] uppercase font-bold block leading-none">
+                      <span className="text-[#6B7280] dark:text-slate-400 text-[9px] uppercase font-bold block leading-none">
                         {isReverse ? 'Gap from L1' : 'Gap from H1'}
                       </span>
-                      <span className="text-xs font-semibold text-[#2563EB] font-mono-numbers mt-2 block">
+                      <span className="text-xs font-semibold text-[#2563EB] dark:text-indigo-400 font-mono-numbers mt-2 block">
                         {ownLeadingValue !== null && currentBestPrice !== null
                           ? `${currency}${Math.max(0, isReverse ? ownLeadingValue - currentBestPrice : currentBestPrice - ownLeadingValue).toLocaleString()}`
                           : '--'}
@@ -522,8 +543,8 @@ const VendorLiveConsole: React.FC = () => {
               </div>
 
               {/* 3. Bid Form */}
-              <div className="bg-white border border-[#E4E7EC] rounded-lg p-6 space-y-4 shadow-sm">
-                <h3 className="font-display text-[11px] text-[#6B7280] tracking-wider font-normal border-b border-[#F1F3F7] pb-2">
+              <div className="bg-white dark:bg-slate-900 border border-[#E4E7EC] dark:border-slate-800 rounded-lg p-6 space-y-4 shadow-sm">
+                <h3 className="font-display text-[11px] text-[#6B7280] dark:text-slate-400 tracking-wider font-normal border-b border-[#F1F3F7] dark:border-slate-800 pb-2">
                   Place your bid
                 </h3>
 
@@ -531,7 +552,7 @@ const VendorLiveConsole: React.FC = () => {
                   <div>
                     <label htmlFor="bid-amount" className="sr-only">Bid amount</label>
                     <div className="relative">
-                      <span className="absolute inset-y-0 left-0 pl-4 flex items-center text-[#6B7280] font-mono-numbers font-medium text-sm" aria-hidden="true">
+                      <span className="absolute inset-y-0 left-0 pl-4 flex items-center text-[#6B7280] dark:text-slate-400 font-mono-numbers font-medium text-sm" aria-hidden="true">
                         {currency}
                       </span>
                       <input
@@ -545,10 +566,10 @@ const VendorLiveConsole: React.FC = () => {
                         onChange={(e) => setBidAmount(e.target.value)}
                         disabled={blocked}
                         aria-describedby="bid-hint"
-                        className="w-full pl-9 pr-4 py-3.5 border border-[#E4E7EC] rounded-[6px] text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB] font-mono-numbers font-medium bg-white disabled:bg-[#F5F7FA]"
+                        className="w-full pl-9 pr-4 py-3.5 border border-[#E4E7EC] dark:border-slate-800 rounded-[6px] text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB] font-mono-numbers font-medium bg-white dark:bg-slate-900 disabled:bg-[#F5F7FA] dark:bg-[#070708]"
                       />
                     </div>
-                    <span id="bid-hint" className="text-[10px] text-[#6B7280] block mt-1.5 pl-0.5">
+                    <span id="bid-hint" className="text-[10px] text-[#6B7280] dark:text-slate-400 block mt-1.5 pl-0.5">
                       {validBidLimit !== null
                         ? isReverse
                           ? `Effective total must be ≤ ${currency}${validBidLimit.toLocaleString()} (min decrement ${currency}${minStep.toLocaleString()} from current best)`
@@ -558,26 +579,26 @@ const VendorLiveConsole: React.FC = () => {
                   </div>
 
                   {/* Calculations Live Preview */}
-                  <div className="border border-[#E4E7EC] rounded-[6px] p-4 space-y-2.5 bg-[#F5F7FA]">
-                    <span className="font-display text-[10px] text-[#6B7280] tracking-wider block font-bold border-b border-[#E4E7EC] pb-1.5 uppercase">
+                  <div className="border border-[#E4E7EC] dark:border-slate-800 rounded-[6px] p-4 space-y-2.5 bg-[#F5F7FA] dark:bg-[#070708]">
+                    <span className="font-display text-[10px] text-[#6B7280] dark:text-slate-400 tracking-wider block font-bold border-b border-[#E4E7EC] dark:border-slate-800 pb-1.5 uppercase">
                       Effective total preview
                     </span>
                     <div className="space-y-2 text-xs font-body">
-                      <div className="flex justify-between items-center text-[#6B7280]">
+                      <div className="flex justify-between items-center text-[#6B7280] dark:text-slate-400">
                         <span>Base Bid</span>
-                        <span className="font-mono-numbers text-[#0F172A]">{currency}{preview.base.toLocaleString()}</span>
+                        <span className="font-mono-numbers text-[#0F172A] dark:text-white">{currency}{preview.base.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between items-center text-[#6B7280]">
+                      <div className="flex justify-between items-center text-[#6B7280] dark:text-slate-400">
                         <span>Loading ({loadingPercentLabel}%)</span>
-                        <span className="font-mono-numbers text-[#0F172A]">{currency}{preview.loading.toLocaleString()}</span>
+                        <span className="font-mono-numbers text-[#0F172A] dark:text-white">{currency}{preview.loading.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between items-center text-[#6B7280]">
+                      <div className="flex justify-between items-center text-[#6B7280] dark:text-slate-400">
                         <span>Conversion & Fixed Loading</span>
-                        <span className="font-mono-numbers text-[#0F172A]">{currency}{preview.conversion.toLocaleString()}</span>
+                        <span className="font-mono-numbers text-[#0F172A] dark:text-white">{currency}{preview.conversion.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between items-center pt-2 border-t border-[#E4E7EC] font-bold text-[#0F172A]">
+                      <div className="flex justify-between items-center pt-2 border-t border-[#E4E7EC] dark:border-slate-800 font-bold text-[#0F172A] dark:text-white">
                         <span>Effective Total</span>
-                        <span className="font-mono-numbers text-[#2563EB]">{currency}{preview.total.toLocaleString()}</span>
+                        <span className="font-mono-numbers text-[#2563EB] dark:text-indigo-400">{currency}{preview.total.toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
@@ -587,7 +608,7 @@ const VendorLiveConsole: React.FC = () => {
                     disabled={blocked || isSubmitting || submitDisabled}
                     className={`w-full py-3.5 rounded-[6px] text-xs font-bold uppercase tracking-widest transition duration-300 font-body flex items-center justify-center gap-2 border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563EB] ${
                       blocked || isSubmitting || submitDisabled
-                        ? 'bg-[#E4E7EC] border-[#E4E7EC] text-[#6B7280] cursor-not-allowed'
+                        ? 'bg-[#E4E7EC] dark:bg-slate-800 border-[#E4E7EC] dark:border-slate-800 text-[#6B7280] dark:text-slate-400 cursor-not-allowed'
                         : 'bg-[#2563EB] text-white hover:bg-blue-700 cursor-pointer shadow-sm border-[#2563EB]'
                     }`}
                   >
@@ -614,22 +635,22 @@ const VendorLiveConsole: React.FC = () => {
         <div className="space-y-6">
 
           {/* A. Your Bid History */}
-          <div className="bg-white border border-[#E4E7EC] rounded-lg p-5 space-y-4 shadow-sm">
-            <h3 className="font-display text-[11px] text-[#6B7280] tracking-wider font-normal border-b border-[#F1F3F7] pb-2">
+          <div className="bg-white dark:bg-slate-900 border border-[#E4E7EC] dark:border-slate-800 rounded-lg p-5 space-y-4 shadow-sm">
+            <h3 className="font-display text-[11px] text-[#6B7280] dark:text-slate-400 tracking-wider font-normal border-b border-[#F1F3F7] dark:border-slate-800 pb-2">
               Your bid history
             </h3>
 
             <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
               {personalHistory.length === 0 ? (
-                <p className="text-[#6B7280] italic text-xs text-center py-6 font-body">No bids submitted yet.</p>
+                <p className="text-[#6B7280] dark:text-slate-400 italic text-xs text-center py-6 font-body">No bids submitted yet.</p>
               ) : (
                 personalHistory.map((b, idx) => (
-                  <div key={b.id || idx} className="flex justify-between items-center text-xs py-2 border-b border-[#F1F3F7] last:border-b-0 gap-2">
-                    <span className="font-mono-numbers text-[#6B7280] whitespace-nowrap">{formatTime(b.timestamp)}</span>
-                    <span className="font-mono-numbers font-semibold text-[#0F172A]">
+                  <div key={b.id || idx} className="flex justify-between items-center text-xs py-2 border-b border-[#F1F3F7] dark:border-slate-800 last:border-b-0 gap-2">
+                    <span className="font-mono-numbers text-[#6B7280] dark:text-slate-400 whitespace-nowrap">{formatTime(b.timestamp)}</span>
+                    <span className="font-mono-numbers font-semibold text-[#0F172A] dark:text-white">
                       {currency}{Number(b.amount).toLocaleString()}
                     </span>
-                    <span className="font-mono-numbers text-[10px] text-[#6B7280]">
+                    <span className="font-mono-numbers text-[10px] text-[#6B7280] dark:text-slate-400">
                       → {currency}{Number(b.effectiveTotal).toLocaleString()}
                     </span>
                   </div>
@@ -639,41 +660,41 @@ const VendorLiveConsole: React.FC = () => {
           </div>
 
           {/* B. Network Status */}
-          <div className="bg-white border border-[#E4E7EC] rounded-lg p-5 space-y-4 shadow-sm">
-            <h3 className="font-display text-[11px] text-[#6B7280] tracking-wider font-normal border-b border-[#F1F3F7] pb-2">
+          <div className="bg-white dark:bg-slate-900 border border-[#E4E7EC] dark:border-slate-800 rounded-lg p-5 space-y-4 shadow-sm">
+            <h3 className="font-display text-[11px] text-[#6B7280] dark:text-slate-400 tracking-wider font-normal border-b border-[#F1F3F7] dark:border-slate-800 pb-2">
               Network status
             </h3>
             <div className="space-y-3.5 text-xs font-body">
               <div className="flex justify-between items-center">
-                <span className="text-[#6B7280]">Latency</span>
+                <span className="text-[#6B7280] dark:text-slate-400">Latency</span>
                 <div className="flex items-center gap-2 font-mono-numbers">
                   <span
                     className={`h-2 w-2 rounded-full ${
-                      latency === null ? 'bg-[#E4E7EC]' : latency < 100 ? 'bg-[#059669]' : latency <= 300 ? 'bg-[#D97706]' : 'bg-[#DC2626]'
+                      latency === null ? 'bg-[#E4E7EC] dark:bg-slate-800' : latency < 100 ? 'bg-[#059669]' : latency <= 300 ? 'bg-[#D97706]' : 'bg-[#DC2626]'
                     }`}
                     aria-hidden="true"
                   />
-                  <span className="font-semibold text-[#0F172A]">{latency !== null ? `${latency} ms` : '—'}</span>
+                  <span className="font-semibold text-[#0F172A] dark:text-white">{latency !== null ? `${latency} ms` : '—'}</span>
                 </div>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-[#6B7280]">WebSocket</span>
+                <span className="text-[#6B7280] dark:text-slate-400">WebSocket</span>
                 <span className="flex items-center gap-1.5">
                   <span className={`h-2 w-2 rounded-full ${socketConnected ? 'bg-[#059669]' : 'bg-[#DC2626]'}`} aria-hidden="true" />
-                  <span className="text-[10px] font-semibold text-[#0F172A]">{socketConnected ? 'Connected' : 'Reconnecting…'}</span>
+                  <span className="text-[10px] font-semibold text-[#0F172A] dark:text-white">{socketConnected ? 'Connected' : 'Reconnecting…'}</span>
                 </span>
               </div>
             </div>
           </div>
 
           {/* C. Server Time */}
-          <div className="bg-white border border-[#E4E7EC] rounded-lg p-5 space-y-2.5 shadow-sm">
-            <h3 className="font-display text-[11px] text-[#6B7280] tracking-wider font-normal border-b border-[#F1F3F7] pb-2">
+          <div className="bg-white dark:bg-slate-900 border border-[#E4E7EC] dark:border-slate-800 rounded-lg p-5 space-y-2.5 shadow-sm">
+            <h3 className="font-display text-[11px] text-[#6B7280] dark:text-slate-400 tracking-wider font-normal border-b border-[#F1F3F7] dark:border-slate-800 pb-2">
               Server time (shown in your local timezone)
             </h3>
             <div className="text-center py-2">
-              <span className="text-2xl font-bold font-mono-numbers text-[#2563EB] tracking-wider block">{formatTime(new Date(serverNowMs))}</span>
-              <span className="text-xs text-[#6B7280] font-mono-numbers block mt-1">{formatDate(new Date(serverNowMs))}</span>
+              <span className="text-2xl font-bold font-mono-numbers text-[#2563EB] dark:text-indigo-400 tracking-wider block">{formatTime(new Date(serverNowMs))}</span>
+              <span className="text-xs text-[#6B7280] dark:text-slate-400 font-mono-numbers block mt-1">{formatDate(new Date(serverNowMs))}</span>
             </div>
           </div>
 
@@ -682,7 +703,7 @@ const VendorLiveConsole: React.FC = () => {
       </main>
 
       {/* Footer copyright */}
-      <footer className="max-w-7xl w-full mx-auto border-t border-[#E4E7EC] pt-4 pb-4 text-center text-[10px] text-[#6B7280] uppercase tracking-widest relative z-10">
+      <footer className="max-w-7xl w-full mx-auto border-t border-[#E4E7EC] dark:border-slate-800 pt-4 pb-4 text-center text-[10px] text-[#6B7280] dark:text-slate-400 uppercase tracking-widest relative z-10">
         © 2026 Black Box Limited • Secure Bidding Console
       </footer>
 
