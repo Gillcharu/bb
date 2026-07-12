@@ -1,0 +1,16 @@
+# Keep the production image lean and free of dev-only / test material.
+node_modules
+dist
+npm-debug.log*
+
+# Development seed (contains sample data; never belongs in a prod image).
+prisma/seed.dev.ts
+
+# Tests and their fixtures (which contain mock passwords / test JWT secrets).
+tests
+jest.config.ts
+
+# Local env files must never be baked into an image.
+.env
+.env.*
+!.env.example

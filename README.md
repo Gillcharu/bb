@@ -51,14 +51,16 @@ openssl rand -hex 32   # run twice: JWT_SECRET and JWT_REFRESH_SECRET must diffe
 ```bash
 docker compose up --build -d
 ```
-Database migrations run automatically when the backend container starts (`prisma migrate deploy`). Then create the initial company and admin account (reads the `BOOTSTRAP_*` variables from `.env`):
+Database migrations run automatically when the backend container starts (`prisma migrate deploy`). Then create the initial company and admin account (the compiled bootstrap reads the `BOOTSTRAP_*` variables from `.env`):
 ```bash
-docker compose exec backend npx prisma db seed
+docker compose exec backend node dist/bootstrap.js
 ```
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:4000` (health check at `/api/health`)
 
 The database starts **empty** apart from the bootstrap company/admin — there is no demo data. Onboard through the UI: sign in as the admin, change the password, then create users, vendors, and the TERMS / DISCLOSURE / RULES document templates under **Settings** (all three templates are required before an auction can be published).
+
+> **Seeding safety.** `prisma/seed.dev.ts` is a *development-only* seed and is unrelated to production onboarding. It cannot run against production: it aborts on `NODE_ENV=production`, aborts if the database already has any users, generates a distinct random password per account (printed once), and depends on `ts-node`, which is absent from the production image. It is also excluded from the image via `.dockerignore`. Production onboarding uses only the compiled `dist/bootstrap.js` above.
 
 ### 4. Local Setup (No Docker)
 ```bash
@@ -67,7 +69,12 @@ cd backend
 npm ci
 npx prisma generate
 npx prisma migrate deploy
-npm run bootstrap          # first run only
+
+# Option A — real bootstrap (single admin from BOOTSTRAP_* env vars):
+npm run bootstrap:dev      # ts-node src/bootstrap.ts (first run only)
+# Option B — development sample data (random passwords printed once):
+npm run seed:dev           # or: npx prisma db seed
+
 npm run dev
 
 # Frontend (separate terminal)

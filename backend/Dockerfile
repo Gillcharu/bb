@@ -32,5 +32,10 @@ USER node
 
 EXPOSE 4000
 
-# Apply pending migrations, then start the compiled server (no dev tooling in prod)
+# Apply pending migrations, then start the compiled server (no dev tooling in prod).
+# First-time onboarding is a separate manual step (no shared/default credentials):
+#   docker compose exec backend node dist/bootstrap.js
+# The development seed (prisma/seed.dev.ts) is excluded via .dockerignore and
+# cannot run here anyway: ts-node is not installed (npm ci --omit=dev) and the
+# seed refuses NODE_ENV=production.
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]

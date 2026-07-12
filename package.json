@@ -23,6 +23,6 @@
     "esbuild": "^0.25.0"
   },
   "prisma": {
-    "seed": "ts-node backend/prisma/seed.ts"
+    "seed": "ts-node backend/prisma/seed.dev.ts"
   }
 }
