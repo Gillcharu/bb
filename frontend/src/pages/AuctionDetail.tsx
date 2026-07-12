@@ -201,8 +201,9 @@ const AuctionDetail: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {(['DRAFT', 'REJECTED'].includes(auction.state) || (user && user.role === 'SYSTEM_ADMIN')) && (
-            <button 
+          {(['DRAFT', 'REJECTED'].includes(auction.state) ||
+            (user?.role === 'SYSTEM_ADMIN' && ['PENDING_APPROVAL', 'APPROVED', 'PUBLISHED'].includes(auction.state))) && (
+            <button
               onClick={() => navigate(`/auctions/${auction.id}/edit`)}
               className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3.5 rounded-xl shadow transition cursor-pointer"
             >

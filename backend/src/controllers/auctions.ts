@@ -233,6 +233,20 @@ export const updateAuction = async (req: Request, res: Response, next: NextFunct
     const auction = await prisma.auction.findUnique({ where: { id } });
     assertCompanyScope(req, auction);
 
+    // A live or finished auction can never be edited — it has bids, results and
+    // an audit trail that must stay intact, so this is blocked for everyone
+    // including system admins.
+    const nonEditable: AuctionState[] = [
+      AuctionState.LIVE,
+      AuctionState.OVERTIME,
+      AuctionState.COMPLETED,
+      AuctionState.CANCELLED,
+    ];
+    if (nonEditable.includes(auction!.state)) {
+      return next(new AppError('This auction can no longer be edited', 400, 'NOT_EDITABLE'));
+    }
+
+    // Once submitted/approved/published, only a system admin may still adjust it.
     if (auction!.state !== AuctionState.DRAFT && auction!.state !== AuctionState.REJECTED) {
       if (req.user?.role !== 'SYSTEM_ADMIN') {
         return next(new AppError('Cannot edit an auction that is already submitted or published', 400));
