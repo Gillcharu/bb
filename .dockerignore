@@ -1,0 +1,35 @@
+# Build context is the repository root (npm workspaces monorepo), so this single
+# .dockerignore applies to both the backend and frontend image builds. Each
+# Dockerfile copies only the workspace it needs; these excludes keep installed
+# modules, build output, secrets, and dev-only material out of every image.
+
+# Installed dependencies (reinstalled from the lockfile inside the image)
+node_modules
+**/node_modules
+
+# Build output
+**/dist
+frontend/.vite
+
+# Version control / editor
+.git
+.gitignore
+.vscode
+.idea
+
+# Secrets and local env — never bake these in (templates are kept)
+.env
+.env.*
+!.env.example
+
+# Logs
+**/*.log
+npm-debug.log*
+
+# Dev-only material that must never enter a production image
+backend/tests
+backend/jest.config.ts
+backend/prisma/seed.dev.ts
+
+# Docs and CI that don't belong in runtime images
+**/*.md
